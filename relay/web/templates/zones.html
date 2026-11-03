@@ -2,65 +2,68 @@
 {% block title %}Privacy zones · Polaris Relay{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">{% endblock %}
 {% block content %}
-<h1>Privacy zones</h1>
-<p>Any one-minute segment that touches a zone, even only within its GPS accuracy, never leaves this machine. Segments
-with no GPS fix at all stay here too. Zones apply to all your devices.</p>
+<div class="gx-page-header"><div><h1>Privacy zones</h1>
+  <p>Any one-minute segment that touches a zone, even only within its GPS accuracy, never leaves this machine. Segments
+  with no GPS fix at all stay here too. Zones apply to all your devices.</p></div></div>
 
 <div id="zone-data" hidden data-zones='{{ zones_json }}' data-tiles="{{ tile_url }}" data-csrf="{{ csrf }}"></div>
-<div id="map" class="map" aria-label="Map of your privacy zones"></div>
+<div id="map" class="rl-map" aria-label="Map of your privacy zones"></div>
 
-<section class="card">
-  <h2>Add a zone</h2>
-  <div class="row">
-    <button id="mode-circle" type="button" class="primary">Circle: click the map</button>
-    <button id="mode-polygon" type="button">Polygon: click each corner</button>
-    <button id="propose" type="button">Suggest zones from my recent drives</button>
+<section class="gx-card">
+  <div class="gx-section__header"><i class="bi bi-plus-circle" aria-hidden="true"></i><h2 class="gx-section__title">Add a zone</h2></div>
+  <div class="gx-panel rl-form">
+    <div class="rl-actions">
+      <button id="mode-circle" type="button" class="gx-btn gx-btn--small"><i class="bi bi-circle" aria-hidden="true"></i>Circle: click the map</button>
+      <button id="mode-polygon" type="button" class="gx-btn gx-btn--small gx-btn--tonal"><i class="bi bi-pentagon" aria-hidden="true"></i>Polygon: click each corner</button>
+      <button id="propose" type="button" class="gx-btn gx-btn--small gx-btn--tonal"><i class="bi bi-magic" aria-hidden="true"></i>Suggest zones from my recent drives</button>
+    </div>
+    <p id="map-help" class="gx-note">Click the map to place a circle, then adjust its radius and save.</p>
+    <form id="circle-form" method="post" action="/zones" class="rl-row">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="circle">
+      <input type="hidden" name="lat"><input type="hidden" name="lng">
+      <label class="rl-inline-field">Name <input class="gx-field" name="name" placeholder="Home" maxlength="64"></label>
+      <label class="rl-inline-field">Radius (m) <input class="gx-field rl-num" name="radius_m" type="number" min="25" max="50000" value="300"></label>
+      <button class="gx-btn gx-btn--small" data-save disabled>Save circle</button>
+    </form>
+    <form id="polygon-form" method="post" action="/zones" class="rl-row" hidden>
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="polygon">
+      <input type="hidden" name="points">
+      <label class="rl-inline-field">Name <input class="gx-field" name="name" placeholder="Work" maxlength="64"></label>
+      <button type="button" id="polygon-undo" class="gx-btn gx-btn--small gx-btn--tonal"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>Undo last corner</button>
+      <button class="gx-btn gx-btn--small" data-save disabled>Save polygon</button>
+    </form>
+    <div id="proposals" class="gx-stack"></div>
   </div>
-  <p id="map-help" class="muted small">Click the map to place a circle, then adjust its radius and save.</p>
-  <form id="circle-form" method="post" action="/zones" class="row">
-    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="circle">
-    <input type="hidden" name="lat"><input type="hidden" name="lng">
-    <label>Name <input name="name" placeholder="Home" maxlength="64"></label>
-    <label>Radius (m) <input name="radius_m" type="number" min="25" max="50000" value="300" class="num"></label>
-    <button class="primary" disabled>Save circle</button>
-  </form>
-  <form id="polygon-form" method="post" action="/zones" class="row" hidden>
-    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="polygon">
-    <input type="hidden" name="points">
-    <label>Name <input name="name" placeholder="Work" maxlength="64"></label>
-    <button type="button" id="polygon-undo">Undo last corner</button>
-    <button class="primary" disabled>Save polygon</button>
-  </form>
-  <div id="proposals"></div>
 </section>
 
-<section class="card">
-  <h2>Your zones</h2>
-  {% if not zones %}<p class="muted">None yet.</p>{% else %}
-  <ul class="plain">
-    {% for z in zones %}
-    <li>{{ z.name or ("Circle" if z.kind == "circle" else "Polygon") }}
-      <span class="muted">{% if z.kind == "circle" %}{{ z.radius_m|round|int }} m radius{% else %}{{ z.points|length }} corners{% endif %}</span>
-      <form method="post" action="/zones/{{ z.id }}/delete" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Remove</button></form></li>
-    {% endfor %}
-  </ul>
+<section class="gx-card">
+  <div class="gx-section__header"><i class="bi bi-shield-lock" aria-hidden="true"></i><h2 class="gx-section__title">Your zones</h2><span class="gx-section__count">{{ zones|length }}</span></div>
+  {% if not zones %}<p class="gx-empty">None yet.</p>{% else %}
+  {% for z in zones %}
+  <div class="gx-row">
+    <div class="gx-row__info"><span class="gx-row__label">{{ z.name or ("Circle" if z.kind == "circle" else "Polygon") }}</span>
+      <span class="gx-row__desc">{% if z.kind == "circle" %}{{ z.radius_m|round|int }} m radius{% else %}{{ z.points|length }} corners{% endif %}</span></div>
+    <form method="post" action="/zones/{{ z.id }}/delete" class="rl-inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="rl-link-btn">Remove</button></form>
+  </div>
+  {% endfor %}
   {% endif %}
-  <p class="muted small">Also keeping private {{ surround }} segment{{ "s" if surround != 1 }} on each side of a zone
+  <p class="gx-row gx-note">Also keeping private {{ surround }} segment{{ "s" if surround != 1 }} on each side of a zone
   segment (change it in Setup).</p>
 </section>
 
-<section class="card">
-  <details><summary>Map tiles</summary>
-    <form method="post" action="/zones/tiles" class="row">
+<details class="gx-card rl-section-toggle">
+  <summary class="gx-section__header"><i class="bi bi-map" aria-hidden="true"></i><h2 class="gx-section__title">Map tiles</h2><i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+  <div class="gx-panel rl-form">
+    <form method="post" action="/zones/tiles" class="rl-row">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <label>Tile URL <input name="tile_url" value="{{ tile_url }}" size="60"></label>
-      <button>Save</button>
+      <label class="gx-field-group rl-grow">Tile URL <input class="gx-field" name="tile_url" value="{{ tile_url }}"></label>
+      <button class="gx-btn gx-btn--small gx-btn--tonal">Save</button>
     </form>
-    <p class="muted small">Your browser fetches map tiles from this server, which sees which area you're looking at.
+    <p class="gx-note">Your browser fetches map tiles from this server, which sees which area you're looking at.
     The default is OpenStreetMap's.</p>
-  </details>
-</section>
-{% if onboarded is none %}<p><a href="/setup">Back to setup</a></p>{% endif %}
+  </div>
+</details>
+{% if onboarded is none %}<p><a class="gx-btn gx-btn--small gx-btn--tonal" href="/setup"><i class="bi bi-arrow-left" aria-hidden="true"></i>Back to setup</a></p>{% endif %}
 {% endblock %}
 {% block scripts %}
 <script src="/static/vendor/leaflet/leaflet.js"></script>

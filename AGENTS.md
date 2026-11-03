@@ -20,6 +20,9 @@ what the code or README already says plainly.
 - Style: 2-space indents, ~120-character lines, dense code, few comments (only why). UI copy and docs
   in American English, plain words. No em-dashes anywhere. Shipped copy says "Polaris Relay" and "access token"; the
   lowercase `polaris-relay` is only for identifiers (repo, image, package, User-Agent, CLI).
+- Pages use StarPilot Galaxy (`static/vendor/galaxy`, the same extract sp-intake vendors) and its `gx-*` classes, so the
+  relay looks like the site. Relay-only styles go in `relay.css` as `rl-*` and use only Galaxy tokens. Backdrop blur is
+  off there, as on the site; don't add it back to anything that scrolls.
 - Commits are conventional commits with no scope and, unless it's really needed, no body: `fix: the description`,
   lowercase, imperative, no trailing period. Not `fix(pipeline): ...`.
 

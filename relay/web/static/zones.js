@@ -15,7 +15,7 @@
   }
 
   map.setView([39.5, -98.35], 4);
-  const style = { color: "#c0392b", weight: 2, fillOpacity: 0.2 };
+  const style = { color: "#d63a62", weight: 2, fillOpacity: 0.2 };
   const shapes = zones.map((z) => (z.kind === "circle"
     ? L.circle([z.lat, z.lng], { ...style, radius: z.radius_m })
     : L.polygon(z.points, style)).bindTooltip(textTip(z.name || "Privacy zone")).addTo(map));
@@ -24,15 +24,15 @@
   const circleForm = document.getElementById("circle-form");
   const polygonForm = document.getElementById("polygon-form");
   const help = document.getElementById("map-help");
-  const draft = { color: "#2471a3", weight: 2, dashArray: "6 4", fillOpacity: 0.15 };
+  const draft = { color: "#7849e8", weight: 2, dashArray: "6 4", fillOpacity: 0.15 };
   let mode = "circle", circle = null, corners = [], outline = null;
 
   function setMode(next) {
     mode = next;
     circleForm.hidden = mode !== "circle";
     polygonForm.hidden = mode !== "polygon";
-    document.getElementById("mode-circle").classList.toggle("primary", mode === "circle");
-    document.getElementById("mode-polygon").classList.toggle("primary", mode === "polygon");
+    document.getElementById("mode-circle").classList.toggle("gx-btn--tonal", mode !== "circle");
+    document.getElementById("mode-polygon").classList.toggle("gx-btn--tonal", mode !== "polygon");
     help.textContent = mode === "circle"
       ? "Click the map to place a circle, then adjust its radius and save."
       : "Click each corner in order. Save when the shape is closed around the place.";
@@ -45,14 +45,14 @@
     circle = L.circle(latlng, { ...draft, radius: radius() }).addTo(map);
     circleForm.lat.value = latlng.lat.toFixed(6);
     circleForm.lng.value = latlng.lng.toFixed(6);
-    circleForm.querySelector("button.primary").disabled = false;
+    circleForm.querySelector("[data-save]").disabled = false;
   }
 
   function drawOutline() {
     if (outline) outline.remove();
     outline = corners.length ? L.polygon(corners, draft).addTo(map) : null;
     polygonForm.points.value = JSON.stringify(corners.map((c) => [Number(c.lat.toFixed(6)), Number(c.lng.toFixed(6))]));
-    polygonForm.querySelector("button.primary").disabled = corners.length < 3;
+    polygonForm.querySelector("[data-save]").disabled = corners.length < 3;
   }
 
   map.on("click", (e) => {
@@ -82,21 +82,23 @@
       return;
     }
     const intro = document.createElement("p");
+    intro.className = "gx-note";
     intro.textContent = "Places your drives often start or end. Check each one on the map before adding it:";
     proposals.append(intro);
     body.proposals.forEach((p, i) => {
       const shape = L.circle([p.lat, p.lng], { ...draft, radius: p.radius_m }).addTo(map);
       const row = document.createElement("div");
-      row.className = "row";
+      row.className = "rl-row";
       const label = document.createElement("span");
       label.textContent = `Place ${i + 1}: ${p.visits} visits, ${p.radius_m} m radius`;
       const show = document.createElement("button");
       show.type = "button";
+      show.className = "gx-btn gx-btn--small gx-btn--tonal";
       show.textContent = "Show";
       show.addEventListener("click", () => map.fitBounds(shape.getBounds().pad(0.5)));
       const add = document.createElement("button");
       add.type = "button";
-      add.className = "primary";
+      add.className = "gx-btn gx-btn--small";
       add.textContent = "Add as a zone";
       add.addEventListener("click", () => {
         setMode("circle");

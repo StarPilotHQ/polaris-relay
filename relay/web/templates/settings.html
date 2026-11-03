@@ -1,143 +1,159 @@
 {% extends "base.html" %}
 {% block title %}{{ "Set up" if onboarding else "Setup" }} · Polaris Relay{% endblock %}
 {% macro field(name) %}<input type="hidden" name="csrf" value="{{ csrf }}">{% endmacro %}
+{% macro header(icon, title) %}<div class="gx-section__header"><i class="bi bi-{{ icon }}" aria-hidden="true"></i><h2 class="gx-section__title">{{ title }}</h2></div>{% endmacro %}
 {% block content %}
-<h1>{{ "Set up Polaris Relay" if onboarding else "Setup" }}</h1>
-{% if onboarding %}<p>Nothing is sent anywhere until you finish setup at the bottom of this page.</p>{% endif %}
+<div class="gx-page-header"><div><h1>{{ "Set up Polaris Relay" if onboarding else "Setup" }}</h1>
+  {% if onboarding %}<p>Nothing is sent anywhere until you finish setup at the bottom of this page.</p>{% endif %}</div></div>
 
-<section class="card">
-  <h2>1. comma token</h2>
-  <p>Get a token at <a href="https://jwt.comma.ai" target="_blank" rel="noopener noreferrer">jwt.comma.ai</a>
-  (sign in with the account your devices are paired to) and paste it here. It stays on this machine and is only
-  sent to comma.</p>
-  {% if comma_set %}<p class="ok">Saved{% if comma_expiry %}; expires {{ comma_expiry.strftime("%Y-%m-%d") }}{% endif %}.
-  Paste a new one to replace it.</p>{% endif %}
-  <form method="post" action="/setup/comma" class="row">{{ field() }}
-    <input name="token" type="password" autocomplete="off" placeholder="eyJ..." required aria-label="comma token">
-    <button class="primary">Save</button>
-  </form>
+<section class="gx-card">
+  {{ header("key", "1. comma token") }}
+  <div class="gx-panel rl-form rl-prose">
+    <p>Get a token at <a href="https://jwt.comma.ai" target="_blank" rel="noopener noreferrer">jwt.comma.ai</a>
+    (sign in with the account your devices are paired to) and paste it here. It stays on this machine and is only
+    sent to comma.</p>
+    {% if comma_set %}<p class="rl-ok"><i class="bi bi-check-circle" aria-hidden="true"></i>Saved{% if comma_expiry %}; expires {{ comma_expiry.strftime("%Y-%m-%d") }}{% endif %}.
+    Paste a new one to replace it.</p>{% endif %}
+    <form method="post" action="/setup/comma" class="rl-row">{{ field() }}
+      <input class="gx-field rl-grow" name="token" type="password" autocomplete="off" placeholder="eyJ..." required aria-label="comma token">
+      <button class="gx-btn gx-btn--small">Save</button>
+    </form>
+  </div>
 </section>
 
-<section class="card">
-  <h2>2. Operation Polaris access token</h2>
-  <p>On the site, go to Profile → Access tokens and create one with "Submit drives" and "Record drives". It's shown
-  once; paste it here.</p>
-  {% if token_info %}<p class="ok">Saved: "{{ token_info.name }}" for {{ token_info.handle }}
-    ({{ token_info.scopes|join(", ") or "no scopes" }}).</p>
-    {% if "submit" not in token_info.scopes %}<p class="warning-text">This token can't submit, so drives are only recorded
-    and checked for moments. No files are requested from your devices and nothing is submitted.</p>{% endif %}
-    {% if "record_drive" not in token_info.scopes %}<p class="muted">This token can't record drives.</p>{% endif %}
-  {% endif %}
-  <form method="post" action="/setup/token" class="row">{{ field() }}
-    <input name="token" type="password" autocomplete="off" placeholder="opu_..." required aria-label="Operation Polaris access token">
-    <button class="primary">Save</button>
-  </form>
+<section class="gx-card">
+  {{ header("person-badge", "2. Operation Polaris access token") }}
+  <div class="gx-panel rl-form">
+    <p>On the site, go to Profile → Access tokens and create one with "Submit drives" and "Record drives". It's shown
+    once; paste it here.</p>
+    {% if token_info %}<p class="rl-ok"><i class="bi bi-check-circle" aria-hidden="true"></i>Saved: "{{ token_info.name }}" for {{ token_info.handle }}
+      ({{ token_info.scopes|join(", ") or "no scopes" }}).</p>
+      {% if "submit" not in token_info.scopes %}<p class="rl-warn"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i>This token can't submit, so drives are only recorded
+      and checked for moments. No files are requested from your devices and nothing is submitted.</p>{% endif %}
+      {% if "record_drive" not in token_info.scopes %}<p class="gx-note">This token can't record drives.</p>{% endif %}
+    {% endif %}
+    <form method="post" action="/setup/token" class="rl-row">{{ field() }}
+      <input class="gx-field rl-grow" name="token" type="password" autocomplete="off" placeholder="opu_..." required aria-label="Operation Polaris access token">
+      <button class="gx-btn gx-btn--small">Save</button>
+    </form>
+  </div>
 </section>
 
-<section class="card">
-  <h2>3. Devices</h2>
-  <p>Every device starts off. Enabling one asks the site whether it's verified on your account; if it isn't, enter one
-  of its routes on the site first to run the device check. Only drives that start after you enable a device are picked
-  up, including when you turn one off and on again. A device paused because the site needs it verified again picks up
-  the drives it missed when you resume it.</p>
-  {% if not devices %}<p class="muted">No devices yet. Save your comma token first.</p>{% else %}
-  <table class="rows">
+<section class="gx-card">
+  <div class="gx-section__header"><i class="bi bi-phone" aria-hidden="true"></i><h2 class="gx-section__title">3. Devices</h2>{% if devices %}<span class="gx-section__count">{{ devices|length }}</span>{% endif %}</div>
+  <div class="gx-panel">
+    <p>Every device starts off. Enabling one asks the site whether it's verified on your account; if it isn't, enter one
+    of its routes on the site first to run the device check. Only drives that start after you enable a device are picked
+    up, including when you turn one off and on again. A device paused because the site needs it verified again picks up
+    the drives it missed when you resume it.</p>
+    {% if not devices %}<p class="gx-note">No devices yet. Save your comma token first.</p>{% endif %}
+  </div>
+  {% if devices %}
+  <div class="rl-table-wrap">
+  <table class="rl-table">
     <thead><tr><th>Device</th><th>Status</th><th>Options</th></tr></thead>
     <tbody>
     {% for d in devices %}
       <tr>
-        <td><strong>{{ d.alias or "Device" }}</strong><br><span class="muted mono">{{ d.dongle_id }}</span></td>
+        <td><strong>{{ d.alias or "Device" }}</strong><span class="rl-sub rl-mono">{{ d.dongle_id }}</span></td>
         <td>
-          {% if d.paused_reason %}<span class="error-text">Paused.</span> {{ d.paused_reason }}
-            <form method="post" action="/devices/{{ d.dongle_id }}/enable" class="inline">{{ field() }}<button>Resume</button></form>
-          {% elif d.enabled %}On
-            <form method="post" action="/devices/{{ d.dongle_id }}/disable" class="inline">{{ field() }}<button>Turn off</button></form>
-          {% else %}Off
-            <form method="post" action="/devices/{{ d.dongle_id }}/enable" class="inline">{{ field() }}<button class="primary">Enable</button></form>
+          {% if d.paused_reason %}<span class="rl-status s-failed">Paused</span><span class="rl-sub">{{ d.paused_reason }}</span>
+            <form method="post" action="/devices/{{ d.dongle_id }}/enable" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small">Resume</button></form>
+          {% elif d.enabled %}<span class="rl-status s-submitted">On</span>
+            <form method="post" action="/devices/{{ d.dongle_id }}/disable" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small gx-btn--tonal">Turn off</button></form>
+          {% else %}<span class="rl-status s-skipped">Off</span>
+            <form method="post" action="/devices/{{ d.dongle_id }}/enable" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small">Enable</button></form>
           {% endif %}
         </td>
         <td>
-          <form method="post" action="/devices/{{ d.dongle_id }}/options" class="stack small">{{ field() }}
-            <label><input type="radio" name="mode" value="auto" {{ "checked" if d.mode == "auto" }}> Submit automatically</label>
-            <label><input type="radio" name="mode" value="suggest" {{ "checked" if d.mode == "suggest" }}> Only suggest (you submit on the site)</label>
-            <span class="muted small">To submit on the site you make the route public on comma, which shares every
+          <form method="post" action="/devices/{{ d.dongle_id }}/options" class="gx-stack">{{ field() }}
+            <label class="rl-check"><input type="radio" name="mode" value="auto" {{ "checked" if d.mode == "auto" }}> Submit automatically</label>
+            <label class="rl-check"><input type="radio" name="mode" value="suggest" {{ "checked" if d.mode == "suggest" }}> Only suggest (you submit on the site)</label>
+            <span class="gx-note">To submit on the site you make the route public on comma, which shares every
             segment, privacy-zone segments included. The site's picker doesn't know about your zones.</span>
-            <label><input type="checkbox" name="record_drives" value="1" {{ "checked" if d.record_drives }}> Record drives (which model drove)</label>
-            <button>Save</button>
+            <label class="rl-check"><input type="checkbox" name="record_drives" value="1" {{ "checked" if d.record_drives }}> Record drives (which model drove)</label>
+            <div><button class="gx-btn gx-btn--small gx-btn--tonal">Save</button></div>
           </form>
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
-  <form method="post" action="/devices/refresh" class="inline">{{ field() }}<button>Refresh the device list</button></form>
+  </div>
+  <div class="gx-row"><form method="post" action="/devices/refresh" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small gx-btn--tonal"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>Refresh the device list</button></form></div>
   {% endif %}
 </section>
 
-<section class="card">
-  <h2>4. Privacy zones</h2>
-  <p>Any one-minute segment that touches a zone stays on this machine: not its logs, not its video. You have
-  {{ zone_count }} zone{{ "s" if zone_count != 1 }}.</p>
-  <a class="button" href="/zones">{{ "Draw your zones" if not zone_count else "Edit zones" }}</a>
+<section class="gx-card">
+  {{ header("shield-lock", "4. Privacy zones") }}
+  <div class="gx-panel rl-form">
+    <p>Any one-minute segment that touches a zone stays on this machine: not its logs, not its video. You have
+    {{ zone_count }} zone{{ "s" if zone_count != 1 }}.</p>
+    <div><a class="gx-btn gx-btn--small{{ ' gx-btn--tonal' if zone_count }}" href="/zones"><i class="bi bi-pencil" aria-hidden="true"></i>{{ "Draw your zones" if not zone_count else "Edit zones" }}</a></div>
+  </div>
 </section>
 
-<section class="card">
-  <h2>5. How files reach the site</h2>
-  <form method="post" action="/settings/general" class="stack">{{ field() }}
-    <label class="choice"><input type="radio" name="transfer" value="relay" {{ "checked" if transfer == "relay" }}>
-      <span><strong>Relay through this machine</strong> (recommended). This machine downloads the needed segments from
-      comma and uploads them to the site. Your route is never made public. Costs your bandwidth: roughly 75 to 115 MB
-      per segment, down and up again.</span></label>
-    <label class="choice"><input type="radio" name="transfer" value="public" {{ "checked" if transfer == "public" }}>
-      <span><strong>Make the route public briefly</strong>. The route is made public, the site copies the segments
-      from comma, and the route is made private again. Uses almost no bandwidth here, but while it's public
-      <strong>anyone with the route's name can read the whole route, privacy-zone segments included</strong>, for up
-      to {{ public_cap_h|round(1) }} hours, and longer if this machine stops mid-step.
-      {% if public_owner_note %}Devices shared with you (not yours) can't have their routes made public, so they always
-      relay.{% endif %}</span></label>
-    <label>Also keep private this many segments on each side of a zone segment
-      <input name="surround" type="number" min="0" max="5" value="{{ surround }}" class="num"></label>
-    <p class="muted small">0 keeps only the segments that touch a zone. 1 also covers the approach and the departure.</p>
-    <label><input type="checkbox" name="update_check" value="1" {{ "checked" if update_check }}> Check for new versions
+<section class="gx-card">
+  {{ header("cloud-arrow-up", "5. How files reach the site") }}
+  <form method="post" action="/settings/general" class="gx-panel rl-form">{{ field() }}
+    <div class="rl-choices">
+      <label class="rl-choice"><input type="radio" name="transfer" value="relay" {{ "checked" if transfer == "relay" }}>
+        <span><strong>Relay through this machine</strong> (recommended). This machine downloads the needed segments from
+        comma and uploads them to the site. Your route is never made public. Costs your bandwidth: roughly 75 to 115 MB
+        per segment, down and up again.</span></label>
+      <label class="rl-choice"><input type="radio" name="transfer" value="public" {{ "checked" if transfer == "public" }}>
+        <span><strong>Make the route public briefly</strong>. The route is made public, the site copies the segments
+        from comma, and the route is made private again. Uses almost no bandwidth here, but while it's public
+        <strong>anyone with the route's name can read the whole route, privacy-zone segments included</strong>, for up
+        to {{ public_cap_h|round(1) }} hours, and longer if this machine stops mid-step.
+        {% if public_owner_note %}Devices shared with you (not yours) can't have their routes made public, so they always
+        relay.{% endif %}</span></label>
+    </div>
+    <div>
+      <label class="rl-inline-field">Also keep private this many segments on each side of a zone segment
+        <input class="gx-field rl-num" name="surround" type="number" min="0" max="5" value="{{ surround }}"></label>
+      <p class="gx-note">0 keeps only the segments that touch a zone. 1 also covers the approach and the departure.</p>
+    </div>
+    <label class="rl-check"><input type="checkbox" name="update_check" value="1" {{ "checked" if update_check }}> Check for new versions
       once a day (asks GitHub's container registry for the latest version number)</label>
-    <button>Save</button>
+    <div><button class="gx-btn gx-btn--small">Save</button></div>
   </form>
 </section>
 
 {% if not onboarding %}
-<section class="card">
-  <details>
-    <summary><h2 class="inline-heading">Advanced</h2></summary>
-    <form method="post" action="/settings/advanced" class="stack">{{ field() }}
-      <p class="muted">When a drive counts as fully uploaded (all must hold):</p>
-      <label>The device was online at least <input name="ping_after_end_min" type="number" step="any" min="0" value="{{ ping_after_end_min }}" class="num"> minutes after the drive ended</label>
-      <label>No new logs arrived for <input name="quiet_min" type="number" step="any" min="1" value="{{ quiet_min }}" class="num"> minutes</label>
-      <label>A newer drive exists, or the drive ended <input name="settle_min" type="number" step="any" min="0" value="{{ settle_min }}" class="num"> minutes ago</label>
-      <label>Give up on files the device hasn't uploaded after <input name="files_wait_days" type="number" step="any" min="0.5" max="6" value="{{ files_wait_days }}" class="num"> days</label>
-      <p class="muted">Submitting automatically:</p>
-      <label>Wait <input name="submit_delay_min" type="number" step="1" min="0" max="1440" value="{{ submit_delay_min|int }}" class="num"> minutes once a drive is ready before submitting it</label>
-      <p class="muted">A drive waits as "Ready to submit" with a countdown, so you can Skip it and submit it yourself on
-        the site, or leave it out. Make it longer if you want more time to pick your own ranges; 0 submits as soon as a
-        drive is ready. Devices set to only suggest never submit, so this doesn't apply to them.</p>
-      <p class="muted">Public-route safety net (only for "Make the route public briefly"):</p>
-      <label>Make the route private again after <input name="public_cap_h" type="number" step="any" min="0.5" max="72" value="{{ public_cap_h }}" class="num"> hours even if the copy hasn't finished</label>
-      <label><input type="checkbox" name="auto_withdraw" value="1" {{ "checked" if auto_withdraw }}> and withdraw that submission</label>
-      <button>Save advanced settings</button>
-    </form>
-  </details>
-</section>
+<details class="gx-card rl-section-toggle">
+  <summary class="gx-section__header"><i class="bi bi-sliders" aria-hidden="true"></i><h2 class="gx-section__title">Advanced</h2><i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+  <form method="post" action="/settings/advanced" class="gx-panel rl-form">{{ field() }}
+    <h3 class="rl-group">When a drive counts as fully uploaded (all must hold)</h3>
+    <label class="rl-inline-field">The device was online at least <input class="gx-field rl-num" name="ping_after_end_min" type="number" step="any" min="0" value="{{ ping_after_end_min }}"> minutes after the drive ended</label>
+    <label class="rl-inline-field">No new logs arrived for <input class="gx-field rl-num" name="quiet_min" type="number" step="any" min="1" value="{{ quiet_min }}"> minutes</label>
+    <label class="rl-inline-field">A newer drive exists, or the drive ended <input class="gx-field rl-num" name="settle_min" type="number" step="any" min="0" value="{{ settle_min }}"> minutes ago</label>
+    <label class="rl-inline-field">Give up on files the device hasn't uploaded after <input class="gx-field rl-num" name="files_wait_days" type="number" step="any" min="0.5" max="6" value="{{ files_wait_days }}"> days</label>
+    <h3 class="rl-group">Submitting automatically</h3>
+    <label class="rl-inline-field">Wait <input class="gx-field rl-num" name="submit_delay_min" type="number" step="1" min="0" max="1440" value="{{ submit_delay_min|int }}"> minutes once a drive is ready before submitting it</label>
+    <p class="gx-note">A drive waits as "Ready to submit" with a countdown, so you can Skip it and submit it yourself on
+      the site, or leave it out. Make it longer if you want more time to pick your own ranges; 0 submits as soon as a
+      drive is ready. Devices set to only suggest never submit, so this doesn't apply to them.</p>
+    <h3 class="rl-group">Public-route safety net (only for "Make the route public briefly")</h3>
+    <label class="rl-inline-field">Make the route private again after <input class="gx-field rl-num" name="public_cap_h" type="number" step="any" min="0.5" max="72" value="{{ public_cap_h }}"> hours even if the copy hasn't finished</label>
+    <label class="rl-check"><input type="checkbox" name="auto_withdraw" value="1" {{ "checked" if auto_withdraw }}> and withdraw that submission</label>
+    <div><button class="gx-btn gx-btn--small">Save advanced settings</button></div>
+  </form>
+</details>
 {% endif %}
 
 {% if onboarding %}
-<section class="card">
-  <h2>6. Finish</h2>
-  <p>Drives that start after you finish are picked up. Earlier drives aren't: comma may already have deleted their
-  files.</p>
-  {% if not zone_count %}<p class="warning-text">You have no privacy zones. Everything outside them can be sent, so
-  draw at least your home before finishing.</p>{% endif %}
-  <form method="post" action="/setup/finish">{{ field() }}
-    <button class="primary" {{ "disabled" if not (comma_set and token_info) }}>Finish setup</button>
-  </form>
+<section class="gx-card">
+  {{ header("flag", "6. Finish") }}
+  <div class="gx-panel rl-form">
+    <p>Drives that start after you finish are picked up. Earlier drives aren't: comma may already have deleted their
+    files.</p>
+    {% if not zone_count %}<p class="rl-warn"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i>You have no privacy zones. Everything outside them can be sent, so
+    draw at least your home before finishing.</p>{% endif %}
+    <form method="post" action="/setup/finish">{{ field() }}
+      <button class="gx-btn" {{ "disabled" if not (comma_set and token_info) }}>Finish setup</button>
+    </form>
+  </div>
 </section>
 {% endif %}
 {% endblock %}

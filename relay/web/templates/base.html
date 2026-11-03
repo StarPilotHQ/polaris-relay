@@ -1,33 +1,67 @@
+{% set path = request.url.path %}
+{% macro navlink(href, icon, label, active) %}<a class="gx-nav-item{{ ' active' if active }}" href="{{ href }}"{% if active %} aria-current="page"{% endif %}><i class="bi bi-{{ icon }}" aria-hidden="true"></i>{{ label }}</a>{% endmacro %}
+{% macro tab(href, icon, label, active) %}<a class="nav-item{{ ' active' if active }}" href="{{ href }}"{% if active %} aria-current="page"{% endif %}><i class="bi bi-{{ icon }}" aria-hidden="true"></i>{{ label }}</a>{% endmacro %}
+{% macro alert(kind, message, link=none) %}
+  {%- set look = {"error": ("danger", "x-octagon"), "warning": ("warn", "exclamation-triangle")}.get(kind, ("", "info-circle")) -%}
+  <div class="gx-alert{{ ' gx-alert--' ~ look[0] if look[0] }}"{% if not link %} role="status"{% endif %}><i class="gx-alert__icon bi bi-{{ look[1] }}" aria-hidden="true"></i>
+    <div class="gx-alert__body"><div class="gx-alert__text">{{ message }}{% if link %}
+      <a href="{{ link }}" target="_blank" rel="noopener noreferrer">What changed</a>{% endif %}</div></div></div>
+{%- endmacro %}
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex">
   <meta name="htmx-config" content='{"allowEval": false, "allowScriptTags": false, "selfRequestsOnly": true}'>
   <title>{% block title %}Polaris Relay{% endblock %}</title>
+  <link rel="stylesheet" href="/static/vendor/galaxy/vendor/bootstrap-icons/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/static/vendor/galaxy/galaxy.css">
   <link rel="stylesheet" href="/static/relay.css?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
 <body>
-  <header class="bar">
-    <a class="brand" href="/">Polaris Relay</a>
-    <nav>
-      <a href="/">Activity</a>
-      <a href="/settings">Setup</a>
-      <a href="/zones">Privacy zones</a>
-      <a href="/notifications">Notifications</a>
-      {% if auth %}<form method="post" action="/logout" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Sign out</button></form>{% endif %}
-    </nav>
+<div id="galaxy-bg" aria-hidden="true"></div>
+<div class="gx-app">
+  <header class="gx-appbar">
+    <div class="gx-appbar__pill">
+      <a class="gx-appbar__home" href="/" aria-label="Polaris Relay, activity"><span class="gx-brand" aria-hidden="true"></span>
+        <span class="rl-wordmark" aria-hidden="true"><span class="rl-wordmark__eyebrow">StarPilot</span><span class="gx-appbar__title">Polaris Relay</span></span></a>
+      {% if path != "/login" %}
+      <nav class="gx-appbar__nav gx-actions" aria-label="Main">
+        {{ navlink("/", "activity", "Activity", path == "/") }}
+        {{ navlink("/settings", "gear", "Setup", path in ("/settings", "/setup")) }}
+        {{ navlink("/zones", "shield-lock", "Privacy zones", path.startswith("/zones")) }}
+        {{ navlink("/notifications", "bell", "Notifications", path.startswith("/notifications")) }}
+      </nav>
+      {% endif %}
+      {% if auth and path != "/login" %}
+      <div class="gx-appbar__right">
+        <form method="post" action="/logout" class="rl-inline"><input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="gx-icon-btn" aria-label="Sign out" title="Sign out"><i class="bi bi-box-arrow-right" aria-hidden="true"></i></button></form>
+      </div>
+      {% endif %}
+    </div>
   </header>
-  <main>
-    {% for banner in banners %}<div class="notice notice-{{ banner[0] }}">{{ banner[1] }}{% if banner|length > 2 %}
-      <a href="{{ banner[2] }}" target="_blank" rel="noopener noreferrer">What changed</a>{% endif %}</div>{% endfor %}
-    {% for kind, message in flashes %}<div class="notice notice-{{ kind }}" role="status">{{ message }}</div>{% endfor %}
+
+  <main class="gx-content">
+    {% for banner in banners %}{{ alert(banner[0], banner[1], banner[2] if banner|length > 2 else none) }}{% endfor %}
+    {% for kind, message in flashes %}{{ alert(kind, message) }}{% endfor %}
     {% block content %}{% endblock %}
   </main>
-  <footer>Polaris Relay {{ version }} · <a href="https://github.com/StarPilotHQ/polaris-relay">source</a></footer>
-  <script src="/static/vendor/htmx/htmx.min.js"></script>
-  {% block scripts %}{% endblock %}
+
+  <footer class="rl-footer">Polaris Relay {{ version }} · <a href="https://github.com/StarPilotHQ/polaris-relay">Source</a></footer>
+</div>
+
+{% if path != "/login" %}
+<nav class="blur-nav" aria-label="Main">
+  {{ tab("/", "activity", "Activity", path == "/") }}
+  {{ tab("/settings", "gear", "Setup", path in ("/settings", "/setup")) }}
+  {{ tab("/zones", "shield-lock", "Zones", path.startswith("/zones")) }}
+  {{ tab("/notifications", "bell", "Notifications", path.startswith("/notifications")) }}
+</nav>
+{% endif %}
+<script src="/static/vendor/htmx/htmx.min.js"></script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

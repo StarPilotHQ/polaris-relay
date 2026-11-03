@@ -1,43 +1,48 @@
 {% extends "base.html" %}
 {% block title %}Notifications · Polaris Relay{% endblock %}
 {% block content %}
-<h1>Notifications</h1>
-<p>Polaris Relay tells you when your comma token is about to expire, when the API version it uses is deprecated,
-when a device needs verifying on the site again, and when a drive keeps failing. Nothing is sent for each drive.</p>
+<div class="gx-page-header"><div><h1>Notifications</h1>
+  <p>Polaris Relay tells you when your comma token is about to expire, when the API version it uses is deprecated,
+  when a device needs verifying on the site again, and when a drive keeps failing. Nothing is sent for each drive.</p></div></div>
 
-<section class="card">
-  <h2>Where to send them</h2>
-  {% if not targets %}<p class="muted">Nowhere yet.</p>{% else %}
-  <ul class="plain">
-    {% for t in targets %}
-    <li><strong>{{ t.name }}</strong> <span class="muted">{{ services[t.service].label }}</span>
-      <form method="post" action="/notifications/{{ t.id }}/test" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Send test</button></form>
-      <form method="post" action="/notifications/{{ t.id }}/delete" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Remove</button></form></li>
-    {% endfor %}
-  </ul>
+<section class="gx-card">
+  <div class="gx-section__header"><i class="bi bi-send" aria-hidden="true"></i><h2 class="gx-section__title">Where to send them</h2><span class="gx-section__count">{{ targets|length }}</span></div>
+  {% if not targets %}<p class="gx-empty">Nowhere yet. Add a service below.</p>{% else %}
+  {% for t in targets %}
+  <div class="gx-row gx-row--wrap">
+    <div class="gx-row__info"><span class="gx-row__label">{{ t.name }}</span><span class="gx-row__desc">{{ services[t.service].label }}</span></div>
+    <div class="rl-actions">
+      <form method="post" action="/notifications/{{ t.id }}/test" class="rl-inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="gx-btn gx-btn--small gx-btn--tonal">Send test</button></form>
+      <form method="post" action="/notifications/{{ t.id }}/delete" class="rl-inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="rl-link-btn">Remove</button></form>
+    </div>
+  </div>
+  {% endfor %}
   {% endif %}
 </section>
 
-{% for key, svc in services.items() %}
-<section class="card">
-  <details><summary>Add {{ svc.label }}</summary>
-    <form method="post" action="/notifications" class="stack">
+<section class="gx-card">
+  <div class="gx-section__header"><i class="bi bi-plus-circle" aria-hidden="true"></i><h2 class="gx-section__title">Add a service</h2></div>
+  {% for key, svc in services.items() %}
+  <details class="gx-row gx-row--stack rl-service">
+    <summary class="gx-row__label">{{ svc.label }}<i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+    <form method="post" action="/notifications" class="rl-form">
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="service" value="{{ key }}">
-      <label>Name <input name="name" placeholder="{{ svc.label }}" maxlength="64"></label>
+      <label class="gx-field-group">Name <input class="gx-field" name="name" placeholder="{{ svc.label }}" maxlength="64"></label>
       {% for name, label, placeholder in svc.fields %}
-      <label>{{ label }} <input name="{{ name }}" placeholder="{{ placeholder }}" {{ 'type=password autocomplete=off' if name in secret_fields }}></label>
+      <label class="gx-field-group">{{ label }} <input class="gx-field" name="{{ name }}" placeholder="{{ placeholder }}" {{ 'type=password autocomplete=off' if name in secret_fields }}></label>
       {% endfor %}
-      <button class="primary">Add</button>
+      <div><button class="gx-btn gx-btn--small">Add</button></div>
     </form>
   </details>
+  {% endfor %}
 </section>
-{% endfor %}
 
-<section class="card">
-  <form method="post" action="/notifications/digest" class="row">
+<section class="gx-card">
+  <div class="gx-section__header"><i class="bi bi-calendar-day" aria-hidden="true"></i><h2 class="gx-section__title">Daily summary</h2></div>
+  <form method="post" action="/notifications/digest" class="gx-panel rl-row">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label><input type="checkbox" name="digest" value="1" {{ "checked" if digest }}> Send a daily summary of finished drives</label>
-    <button>Save</button>
+    <label class="rl-check rl-grow"><input type="checkbox" name="digest" value="1" {{ "checked" if digest }}> Send a daily summary of finished drives</label>
+    <button class="gx-btn gx-btn--small gx-btn--tonal">Save</button>
   </form>
 </section>
 {% endblock %}

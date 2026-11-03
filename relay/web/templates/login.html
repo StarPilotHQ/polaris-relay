@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Sign in · Polaris Relay{% endblock %}
 {% block content %}
-<section class="card narrow">
-  <h1>Sign in</h1>
-  <form method="post" action="/login" class="stack">
+<section class="gx-card rl-narrow">
+  <div class="gx-section__header"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i><h1 class="gx-section__title">Sign in</h1></div>
+  <form method="post" action="/login" class="gx-panel rl-form">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>User name <input name="username" autocomplete="username" required></label>
-    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
-    <button class="primary">Sign in</button>
+    <label class="gx-field-group">User name <input class="gx-field" name="username" autocomplete="username" required></label>
+    <label class="gx-field-group">Password <input class="gx-field" name="password" type="password" autocomplete="current-password" required></label>
+    <div><button class="gx-btn">Sign in</button></div>
   </form>
 </section>
 {% endblock %}

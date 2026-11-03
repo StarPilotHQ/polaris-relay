@@ -125,8 +125,9 @@ POLARIS_HOST=https://polaris.firestar.link ALLOWED_HOSTS=localhost:8080 INSECURE
 Then open http://localhost:8080. The Docker image has `POLARIS_HOST` built in. AGENTS.md has how it's built and the
 comma behavior [comma's API docs](https://api.comma.ai) don't cover.
 
-Third-party code: [htmx](https://htmx.org) 2.0.4 (0BSD) and [Leaflet](https://leafletjs.com) 1.9.4 (BSD-2-Clause),
-vendored under `relay/web/static/vendor/` with their licenses. Map data © OpenStreetMap contributors.
+Third-party code: [htmx](https://htmx.org) 2.0.4 (0BSD), [Leaflet](https://leafletjs.com) 1.9.4 (BSD-2-Clause),
+StarPilot's Galaxy styles (MIT) and [Bootstrap Icons](https://icons.getbootstrap.com) 1.11.3 (MIT), vendored under
+`relay/web/static/vendor/` with their licenses. Map data © OpenStreetMap contributors.
 
 ## License
 
