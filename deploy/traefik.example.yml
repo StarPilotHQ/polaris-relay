@@ -1,0 +1,21 @@
+# Behind Traefik (labels on the relay service). Traefik terminates HTTPS; the relay keeps its own sign-in.
+services:
+  relay:
+    image: ghcr.io/starpilothq/polaris-relay:latest
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    environment:
+      AUTH_PASSWORD: "admin:$$2y$$12$$replace-with-your-hash"
+      ALLOWED_HOSTS: "relay.example.com"
+      ALLOWED_ORIGINS: "https://relay.example.com"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.relay.rule=Host(`relay.example.com`)
+      - traefik.http.routers.relay.entrypoints=websecure
+      - traefik.http.routers.relay.tls.certresolver=letsencrypt
+      - traefik.http.services.relay.loadbalancer.server.port=8080
+      # Optional: Traefik basic auth instead of the relay's sign-in. Then set INSECURE_ALLOW_NO_AUTH=1 above and
+      # remove AUTH_PASSWORD.
+      # - traefik.http.middlewares.relay-auth.basicauth.users=admin:$$2y$$12$$replace-with-your-hash
+      # - traefik.http.routers.relay.middlewares=relay-auth

@@ -1,0 +1,10 @@
+.git
+.github
+.venv
+.omc
+.pytest_cache
+**/__pycache__
+var/
+data/
+tests/
+deploy/

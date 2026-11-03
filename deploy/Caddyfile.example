@@ -1,0 +1,9 @@
+# Caddy terminates HTTPS and proxies to the relay on the same host.
+# Relay environment: ALLOWED_HOSTS=relay.example.com  ALLOWED_ORIGINS=https://relay.example.com
+relay.example.com {
+	reverse_proxy 127.0.0.1:8080
+	# Optional: Caddy's own sign-in instead of the relay's (then INSECURE_ALLOW_NO_AUTH=1 on the relay).
+	# basic_auth {
+	# 	admin $2a$14$replace-with-caddy-hash-password-output
+	# }
+}

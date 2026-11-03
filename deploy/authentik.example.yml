@@ -1,0 +1,25 @@
+# Behind Traefik with Authentik forward auth: Authentik signs you in, so the relay's own sign-in is turned off.
+# In Authentik, create a Proxy Provider in "Forward auth (single application)" mode for https://relay.example.com
+# and add it to your outpost.
+services:
+  relay:
+    image: ghcr.io/starpilothq/polaris-relay:latest
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    environment:
+      INSECURE_ALLOW_NO_AUTH: "1"
+      ALLOWED_HOSTS: "relay.example.com"
+      ALLOWED_ORIGINS: "https://relay.example.com"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.relay.rule=Host(`relay.example.com`)
+      - traefik.http.routers.relay.entrypoints=websecure
+      - traefik.http.routers.relay.tls.certresolver=letsencrypt
+      - traefik.http.routers.relay.middlewares=authentik@docker
+      - traefik.http.services.relay.loadbalancer.server.port=8080
+      # The middleware, defined once on your Authentik outpost container:
+      # - traefik.http.middlewares.authentik.forwardauth.address=http://authentik-outpost:9000/outpost.goauthentik.io/auth/traefik
+      # - traefik.http.middlewares.authentik.forwardauth.trustForwardHeader=true
+      # - traefik.http.middlewares.authentik.forwardauth.authResponseHeaders=X-authentik-username
+    # Don't publish a port: anything that reaches the container directly skips Authentik.

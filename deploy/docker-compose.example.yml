@@ -1,0 +1,15 @@
+# Polaris Relay with its own sign-in. Put it behind HTTPS (see the proxy examples in this folder) if you open it
+# from anywhere but this machine.
+services:
+  relay:
+    image: ghcr.io/starpilothq/polaris-relay:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      # htpasswd -nbBC 12 admin 'your password'   (in this file, write each $ as $$)
+      AUTH_PASSWORD: "admin:$$2y$$12$$replace-with-your-hash"
+      # The host names you open it on, with the port if it isn't 80/443.
+      ALLOWED_HOSTS: "localhost:8080,127.0.0.1:8080"
