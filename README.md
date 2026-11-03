@@ -21,6 +21,12 @@ Working files are deleted as soon as a drive is done. The database keeps only wh
 days. Nothing is sent anywhere except comma, the site, your notification services, and a daily version check (which
 you can turn off).
 
+## Screenshots
+
+![The activity list: each drive's status and its suggested moments](docs/screenshots/activity.webp)
+
+![Privacy zones drawn on the map](docs/screenshots/zones.webp)
+
 ## Before you start
 
 - A comma device running StarPilot, paired to your comma account.
