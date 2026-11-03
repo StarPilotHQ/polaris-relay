@@ -5,6 +5,7 @@
   const map = L.map("map", { worldCopyJump: true });
   L.tileLayer(data.dataset.tiles, {
     maxZoom: 19,
+    referrerPolicy: "strict-origin-when-cross-origin",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
 

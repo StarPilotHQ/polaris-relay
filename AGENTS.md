@@ -131,6 +131,9 @@ what the code or README already says plainly.
 - A route's `timings` hold ISO strings only; the activity page formats them as such. Counts go in their own columns.
 - `Referrer-Policy` must stay `same-origin`: under `no-referrer` browsers send `Origin: null` on form POSTs and the
   origin guard refused every form. Tests set `Origin` by hand, so they can't catch this; check a form in a browser.
+  OpenStreetMap's tile policy requires a `Referer`, which `same-origin` never sends to another host, so the tile layer
+  sets its own `referrerPolicy` (`strict-origin-when-cross-origin`, the origin only); without it every tile was OSM's
+  "Access blocked" image.
 - Leaflet adds layers only once the map has a view, and a circle's `getBounds` throws until then: `zones.js` sets a view
   before drawing the saved zones. The tests don't run JavaScript; open the zones page with a circle saved after changing it.
 - `TestClient` sends no `Origin`; POSTs in tests need `headers={"origin": "http://testserver"}` or the origin guard
