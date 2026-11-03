@@ -1,0 +1,67 @@
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --text: #1d2330; --muted: #5d6675; --line: #d9dde4;
+  --primary: #2459c4; --on-primary: #ffffff; --error: #b3261e; --warning: #8a5a00; --ok: #1e6b3a;
+  --notice-info: #e8eefb; --notice-warning: #fdf3dc; --notice-error: #fbe5e3;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b; --surface: #1b2029; --text: #e6e9ef; --muted: #9aa3b2; --line: #2e3542;
+    --primary: #7aa2ff; --on-primary: #0d1424; --error: #ff9a91; --warning: #f3c56b; --ok: #7fd49a;
+    --notice-info: #1d2a45; --notice-warning: #3a2f14; --notice-error: #45201d;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--primary); }
+main { max-width: 1040px; margin: 0 auto; padding: 16px; }
+footer { max-width: 1040px; margin: 0 auto; padding: 16px; color: var(--muted); font-size: 13px; }
+.bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+  padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.bar nav { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.brand { font-weight: 700; color: var(--text); text-decoration: none; }
+h1 { font-size: 24px; margin: 8px 0 12px; }
+h2 { font-size: 18px; margin: 0 0 8px; }
+.inline-heading { display: inline; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 0 0 16px; }
+.narrow { max-width: 380px; margin: 40px auto; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.mono { font-family: ui-monospace, monospace; font-size: 12px; }
+.ok { color: var(--ok); }
+.error-text { color: var(--error); }
+.warning-text { color: var(--warning); }
+.notice { border-radius: 8px; padding: 10px 14px; margin: 0 0 12px; background: var(--notice-info); }
+.notice-warning { background: var(--notice-warning); }
+.notice-error { background: var(--notice-error); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.stack { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.stack.small { gap: 4px; }
+.inline { display: inline; }
+.choice { display: flex; gap: 8px; align-items: flex-start; max-width: 760px; }
+input, button, .button { font: inherit; color: inherit; }
+input[type=text], input:not([type]), input[type=password], input[type=number] {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+input[name=token] { flex: 1 1 320px; }
+.num { width: 6em; }
+button, .button { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px;
+  cursor: pointer; text-decoration: none; display: inline-block; }
+button.primary, .button.primary { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.link { background: none; border: none; color: var(--primary); padding: 0 4px; text-decoration: underline; }
+table.rows { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table.rows th, table.rows td { text-align: left; vertical-align: top; padding: 10px; border-bottom: 1px solid var(--line); }
+table.rows th { font-size: 13px; color: var(--muted); font-weight: 600; }
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.timings { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 13px; margin: 6px 0 0; }
+.timings dt { color: var(--muted); }
+.timings dd { margin: 0; }
+.map { height: 460px; border-radius: 10px; border: 1px solid var(--line); margin: 0 0 16px; }
+summary { cursor: pointer; }
+@media (max-width: 640px) {
+  table.rows thead { display: none; }
+  table.rows tr, table.rows td { display: block; }
+  table.rows td { border-bottom: none; padding: 4px 10px; }
+  table.rows tr { border-bottom: 1px solid var(--line); padding: 6px 0; }
+  .map { height: 340px; }
+}

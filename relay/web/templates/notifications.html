@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Notifications · Polaris Relay{% endblock %}
+{% block content %}
+<h1>Notifications</h1>
+<p>Polaris Relay tells you when your comma token is about to expire, when the API version it uses is deprecated,
+when a device needs verifying on the site again, and when a drive keeps failing. Nothing is sent for each drive.</p>
+
+<section class="card">
+  <h2>Where to send them</h2>
+  {% if not targets %}<p class="muted">Nowhere yet.</p>{% else %}
+  <ul class="plain">
+    {% for t in targets %}
+    <li><strong>{{ t.name }}</strong> <span class="muted">{{ services[t.service].label }}</span>
+      <form method="post" action="/notifications/{{ t.id }}/test" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Send test</button></form>
+      <form method="post" action="/notifications/{{ t.id }}/delete" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Remove</button></form></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+{% for key, svc in services.items() %}
+<section class="card">
+  <details><summary>Add {{ svc.label }}</summary>
+    <form method="post" action="/notifications" class="stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="service" value="{{ key }}">
+      <label>Name <input name="name" placeholder="{{ svc.label }}" maxlength="64"></label>
+      {% for name, label, placeholder in svc.fields %}
+      <label>{{ label }} <input name="{{ name }}" placeholder="{{ placeholder }}" {{ 'type=password autocomplete=off' if name in secret_fields }}></label>
+      {% endfor %}
+      <button class="primary">Add</button>
+    </form>
+  </details>
+</section>
+{% endfor %}
+
+<section class="card">
+  <form method="post" action="/notifications/digest" class="row">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label><input type="checkbox" name="digest" value="1" {{ "checked" if digest }}> Send a daily summary of finished drives</label>
+    <button>Save</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,36 @@
+[project]
+name = "polaris-relay"
+version = "0.1.0"
+description = "Contribute your StarPilot drives to Operation Polaris from your own machine: only the suggested moments, never your privacy zones."
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+  "apprise>=1.8",
+  "bcrypt>=4.1",
+  "fastapi>=0.115",
+  "httpx>=0.27",
+  "itsdangerous>=2.2",
+  "jinja2>=3.1",
+  "pycapnp>=2.0",
+  "python-multipart>=0.0.9",
+  "sqlalchemy>=2.0",
+  "uvicorn>=0.30",
+  "zstandard>=0.23",
+]
+
+[project.scripts]
+polaris-relay = "relay.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["relay"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

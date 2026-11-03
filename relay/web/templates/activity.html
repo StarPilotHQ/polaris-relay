@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Activity · Polaris Relay{% endblock %}
+{% block content %}
+<h1>Activity</h1>
+<p class="muted">One row per drive since setup. Moments are suggested by the site; only those, never whole drives or
+anything in a privacy zone, are sent.</p>
+<div id="activity" hx-get="/" hx-trigger="every 15s" hx-select="#activity" hx-swap="outerHTML">
+{% if not routes %}
+  <p class="card">No drives yet. Drives that start after setup show up here once they've finished uploading.</p>
+{% else %}
+<table class="rows">
+  <thead><tr><th>Drive</th><th>Status</th><th>Moments</th><th></th></tr></thead>
+  <tbody>
+  {% for r in routes %}
+    {% set d = devices.get(r.dongle_id) %}
+    <tr>
+      <td><strong>{{ d.alias if d and d.alias else "Device" }}</strong><br>
+        <span class="muted">{{ r.start_time.strftime("%Y-%m-%d %H:%M UTC") if r.start_time else "" }}</span></td>
+      <td>{{ labels.get(r.state, r.state) }}{% if r.deferred %} (deferred){% endif %}
+        {% if r.state == ready and not r.skip_requested %}{% set left = ((submit_at(r) - now).total_seconds() / 60)|round(0, "ceil")|int %}
+          <br><span class="muted">Submits automatically {{ "in under a minute" if left <= 1 else "in " ~ left ~ " minutes" }}
+          ({{ submit_at(r).strftime("%H:%M UTC") }}).</span>{% endif %}
+        {% if r.note %}<br><span class="muted">{{ r.note }}</span>{% endif %}
+        {% if r.error and r.state not in final %}<br><span class="error-text">Last error: {{ r.error }}</span>{% endif %}</td>
+      <td>
+        {% if r.submitted %}{{ r.submitted }} submitted{% elif r.suggestions %}{{ r.suggestions }} suggested{% else %}-{% endif %}
+        {% if r.needs_input %}<br><span class="muted">{{ r.needs_input }} need{{ "s" if r.needs_input == 1 }} a reviewer's input</span>{% endif %}
+        {% if r.excluded %}<br><span class="muted">{{ r.excluded|length }} segment{{ "s" if r.excluded|length != 1 }} kept private</span>{% endif %}
+      </td>
+      <td>{% if r.link and r.link.startswith(site_prefix) %}<a href="{{ r.link }}" target="_blank" rel="noopener noreferrer">Open on the site</a>{% endif %}
+        {% if skippable(r) and not r.skip_requested %}
+        <form method="post" action="/drives/{{ keys[r.fullname] }}/skip" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="link" title="Don't want to submit this drive, or want to fill it in yourself on the site? Skip it and Polaris Relay submits nothing for it.">Skip</button></form>
+        {% endif %}
+        <details><summary>Details</summary>
+          <dl class="timings">
+            {% for name, at in (r.timings or {}).items() if at is string %}<dt>{{ name }}</dt><dd>{{ at[:19].replace("T", " ") }}</dd>{% endfor %}
+            {% if r.upload_vanished %}<dt>left the upload queue</dt><dd>{{ r.upload_vanished }} time{{ "s" if r.upload_vanished != 1 }}</dd>{% endif %}
+            {% if r.grew_after_ready %}<dt>note</dt><dd>more logs arrived after it looked complete</dd>{% endif %}
+          </dl>
+        </details></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+</div>
+{% endblock %}

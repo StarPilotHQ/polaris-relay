@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="htmx-config" content='{"allowEval": false, "allowScriptTags": false, "selfRequestsOnly": true}'>
+  <title>{% block title %}Polaris Relay{% endblock %}</title>
+  <link rel="stylesheet" href="/static/relay.css?v={{ asset_version }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/">Polaris Relay</a>
+    <nav>
+      <a href="/">Activity</a>
+      <a href="/settings">Setup</a>
+      <a href="/zones">Privacy zones</a>
+      <a href="/notifications">Notifications</a>
+      {% if auth %}<form method="post" action="/logout" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Sign out</button></form>{% endif %}
+    </nav>
+  </header>
+  <main>
+    {% for banner in banners %}<div class="notice notice-{{ banner[0] }}">{{ banner[1] }}{% if banner|length > 2 %}
+      <a href="{{ banner[2] }}" target="_blank" rel="noopener noreferrer">What changed</a>{% endif %}</div>{% endfor %}
+    {% for kind, message in flashes %}<div class="notice notice-{{ kind }}" role="status">{{ message }}</div>{% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer>Polaris Relay {{ version }} · <a href="https://github.com/StarPilotHQ/polaris-relay">source</a></footer>
+  <script src="/static/vendor/htmx/htmx.min.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
