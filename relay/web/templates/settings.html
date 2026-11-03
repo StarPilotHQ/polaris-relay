@@ -12,7 +12,7 @@
     <p>Get a token at <a href="https://jwt.comma.ai" target="_blank" rel="noopener noreferrer">jwt.comma.ai</a>
     (sign in with the account your devices are paired to) and paste it here. It stays on this machine and is only
     sent to comma.</p>
-    {% if comma_set %}<p class="rl-ok"><i class="bi bi-check-circle" aria-hidden="true"></i>Saved{% if comma_expiry %}; expires {{ comma_expiry.strftime("%Y-%m-%d") }}{% endif %}.
+    {% if comma_set %}<p class="rl-ok"><i class="bi bi-check-circle" aria-hidden="true"></i>Saved{% if comma_expiry %}; expires {{ when(comma_expiry) }}{% endif %}.
     Paste a new one to replace it.</p>{% endif %}
     <form method="post" action="/setup/comma" class="rl-row">{{ field() }}
       <input class="gx-field rl-grow" name="token" type="password" autocomplete="off" placeholder="eyJ..." required aria-label="comma token">

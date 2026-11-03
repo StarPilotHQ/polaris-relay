@@ -18,11 +18,11 @@
     {% set d = devices.get(r.dongle_id) %}
     <tr>
       <td><strong>{{ d.alias if d and d.alias else "Device" }}</strong>
-        <span class="rl-sub">{{ r.start_time.strftime("%Y-%m-%d %H:%M UTC") if r.start_time else "" }}</span></td>
+        <span class="rl-sub">{{ when(r.start_time) }}</span></td>
       <td><span class="rl-status s-{{ r.state }}">{{ labels.get(r.state, r.state) }}{% if r.deferred %} (deferred){% endif %}</span>
         {% if r.state == ready and not r.skip_requested %}{% set left = ((submit_at(r) - now).total_seconds() / 60)|round(0, "ceil")|int %}
           <span class="rl-sub">Submits automatically {{ "in under a minute" if left <= 1 else "in " ~ left ~ " minutes" }}
-          ({{ submit_at(r).strftime("%H:%M UTC") }}).</span>{% endif %}
+          ({{ when(submit_at(r), "time") }}).</span>{% endif %}
         {% if r.note %}<span class="rl-sub">{{ r.note }}</span>{% endif %}
         {% if r.error and r.state not in final %}<span class="rl-sub rl-error-text">Last error: {{ r.error }}</span>{% endif %}</td>
       <td>
@@ -40,7 +40,7 @@
         </div>
         <details class="rl-details"><summary>Details</summary>
           <dl class="rl-timings">
-            {% for name, at in (r.timings or {}).items() if at is string %}<dt>{{ name }}</dt><dd>{{ at[:19].replace("T", " ") }}</dd>{% endfor %}
+            {% for name, at in (r.timings or {}).items() if at is string %}<dt>{{ name }}</dt><dd>{{ when(at) }}</dd>{% endfor %}
             {% if r.upload_vanished %}<dt>left the upload queue</dt><dd>{{ r.upload_vanished }} time{{ "s" if r.upload_vanished != 1 }}</dd>{% endif %}
             {% if r.grew_after_ready %}<dt>note</dt><dd>more logs arrived after it looked complete</dd>{% endif %}
           </dl>

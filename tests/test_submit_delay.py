@@ -1,6 +1,6 @@
 import html
 import re
-from datetime import timedelta
+from datetime import UTC, timedelta
 
 from relay import db
 from relay.db import Route
@@ -27,6 +27,11 @@ def test_a_ready_drive_waits_out_the_delay_then_submits(log_schema, clock, make_
   assert not site.submits and site.files
   page = web(w).get("/").text
   assert "Ready to submit" in page and "Submits automatically in 50 minutes" in page
+  ready_at = route(w).ready_at.astimezone(UTC)
+  submit_at = (ready_at + timedelta(minutes=60)).isoformat(timespec="seconds")
+  assert f'<time datetime="{submit_at}" data-style="time">{ready_at + timedelta(minutes=60):%H:%M} UTC</time>' in page
+  assert re.search(r'<time datetime="[^"]+\+00:00" data-style="datetime">\d{4}-\d\d-\d\d \d\d:\d\d UTC</time>', page)
+  assert "/static/local-time.js" in page
   clock.advance(minutes=30)
   w.tick()
   assert route(w).state == State.READY and not site.submits

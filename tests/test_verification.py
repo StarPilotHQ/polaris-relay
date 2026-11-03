@@ -86,7 +86,8 @@ def test_deprecation_is_shown_and_told_once_and_nothing_stops(log_schema, clock,
   told = [b for t, b in notes if "update" in t.lower()]
   assert len(told) == 1 and "deprecated since 2027-01-01" in told[0] and "stops" not in told[0]
   page = web(w).get("/").text
-  assert "deprecated since 2027-01-01" in page and 'href="https://site.test/docs/api"' in page
+  since = '<time datetime="2027-01-01T00:00:00+00:00" data-style="date">2027-01-01</time>'
+  assert f"deprecated since {since}" in page and 'href="https://site.test/docs/api"' in page
   site.headers["Sunset"] = SUNSET  # an end date is set: tell again
   scopes_stale(w)
   w.tick()
@@ -110,7 +111,7 @@ def test_after_the_sunset_it_keeps_trying_and_says_so(log_schema, clock, make_wo
     s.get(Device, DONGLE).enabled_at = clock() - timedelta(days=1)
     s.commit()
   page = web(w).get("/").text
-  assert "stopped working on 2027-05-01" in page
+  assert 'stopped working on <time datetime="2027-05-01T00:00:00+00:00" data-style="date">2027-05-01</time>' in page
   w.tick()
   assert any(q.url.path.endswith("/me") or "/routes" in q.url.path for q in site.requests[-3:])
 

@@ -7,7 +7,7 @@ import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -24,7 +25,7 @@ from relay import __version__, cluster, db, notify
 from relay.comma import CommaClient, CommaError, token_expiry
 from relay.config import Config
 from relay.db import Device, Notifier, Route, Zone, now_utc
-from relay.pipeline import State, Worker, deprecation_text, filter_changed, version_banner
+from relay.pipeline import State, Worker, deprecation_parts, filter_changed, version_banner
 from relay.site import SiteClient, SiteError
 
 log = logging.getLogger("relay")
@@ -57,6 +58,19 @@ def tile_url_ok(url: str) -> str | None:
   return f"https://{host}/{path}"
 
 
+FALLBACK_FORMATS = {"date": "%Y-%m-%d", "datetime": "%Y-%m-%d %H:%M UTC", "time": "%H:%M UTC"}
+
+
+def when(at: datetime | str | None, style: str = "datetime") -> Markup:
+  """A <time> element; local-time.js rewrites its text in the browser's locale and time zone (UTC without JavaScript)."""
+  if not at:
+    return Markup("")
+  at = datetime.fromisoformat(at) if isinstance(at, str) else at
+  at = (at if at.tzinfo else at.replace(tzinfo=UTC)).astimezone(UTC)
+  return Markup('<time datetime="{}" data-style="{}">{}</time>').format(
+    at.isoformat(timespec="seconds"), style, at.strftime(FALLBACK_FORMATS[style]))
+
+
 def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, start_worker: bool = False,
                comma_factory=None, site_factory=None) -> FastAPI:
   @asynccontextmanager
@@ -70,6 +84,7 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
 
   app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
   templates = Jinja2Templates(directory=str(HERE / "templates"))
+  templates.env.globals["when"] = when
   comma_factory = comma_factory or (lambda token: CommaClient(token, config.comma_api, config.athena_api))
   site_factory = site_factory or (lambda token: SiteClient(config.polaris_host, token))
   worker = worker or Worker(config, sessionmaker, comma_factory, site_factory)
@@ -171,9 +186,10 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
       if dep := db.get(s, "deprecation"):
         link = dep.get("link") or ""
         link = link if link.startswith(config.polaris_host + "/") else config.site_url("/docs/api")
-        banners.append(("warning", deprecation_text(dep, now_utc()), link))
+        text = Markup("").join(when(p, "date") if isinstance(p, datetime) else p for p in deprecation_parts(dep, now_utc()))
+        banners.append(("warning", text, link))
       if (exp := token_expiry(db.get(s, "comma_token") or "")) and exp - now_utc() < timedelta(days=7):
-        banners.append(("warning", f"Your comma token expires {exp:%Y-%m-%d}. Paste a new one in Setup."))
+        banners.append(("warning", Markup("Your comma token expires {}. Paste a new one in Setup.").format(when(exp))))
       if latest := version_banner(s):
         banners.append(("info", f"Version {latest} is available (you have {__version__})."))
     flashes = request.session.pop("flash", [])

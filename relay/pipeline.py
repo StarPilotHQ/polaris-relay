@@ -1305,12 +1305,15 @@ def spoken(wait: timedelta) -> str:
   return f"{hours:g} hour{'s' if hours != 1 else ''}"
 
 
-def deprecation_text(seen: dict, now: datetime) -> str:
+def deprecation_parts(seen: dict, now: datetime) -> list[str | datetime]:
   """The banner and notification: since when the API version is deprecated and, once known, when it stops."""
-  since = datetime.fromtimestamp(seen["since"], now.tzinfo).strftime("%Y-%m-%d")
-  text = f"The site's API version Polaris Relay uses is deprecated since {since}"
+  parts = ["The site's API version Polaris Relay uses is deprecated since ", datetime.fromtimestamp(seen["since"], now.tzinfo)]
   if seen.get("sunset"):
     sunset = datetime.fromtimestamp(seen["sunset"], now.tzinfo)
-    text += (f", and stopped working on {sunset:%Y-%m-%d} (it's still tried; the site decides)"
-             if sunset <= now else f", and stops working on {sunset:%Y-%m-%d}")
-  return text + ". Update Polaris Relay."
+    parts += ([", and stopped working on ", sunset, " (it's still tried; the site decides)"] if sunset <= now
+              else [", and stops working on ", sunset])
+  return [*parts, ". Update Polaris Relay."]
+
+
+def deprecation_text(seen: dict, now: datetime) -> str:
+  return "".join(f"{p:%Y-%m-%d}" if isinstance(p, datetime) else p for p in deprecation_parts(seen, now))
