@@ -42,44 +42,33 @@
 <section class="gx-card">
   <div class="gx-section__header"><i class="bi bi-phone" aria-hidden="true"></i><h2 class="gx-section__title">3. Devices</h2>{% if devices %}<span class="gx-section__count">{{ devices|length }}</span>{% endif %}</div>
   <div class="gx-panel">
-    <p>Every device starts off. Enabling one asks the site whether it's verified on your account; if it isn't, enter one
-    of its routes on the site first to run the device check. Only drives that start after you enable a device are picked
-    up, including when you turn one off and on again. A device paused because the site needs it verified again picks up
-    the drives it missed when you resume it.</p>
+    <p>Enable a device once it's verified on the site. Only drives that start after you enable it are picked up.</p>
     {% if not devices %}<p class="gx-note">No devices yet. Save your comma token first.</p>{% endif %}
   </div>
-  {% if devices %}
-  <div class="rl-table-wrap">
-  <table class="rl-table">
-    <thead><tr><th>Device</th><th>Status</th><th>Options</th></tr></thead>
-    <tbody>
-    {% for d in devices %}
-      <tr>
-        <td><strong>{{ d.alias or "Device" }}</strong><span class="rl-sub rl-mono">{{ d.dongle_id }}</span></td>
-        <td>
-          {% if d.paused_reason %}<span class="rl-status s-failed">Paused</span><span class="rl-sub">{{ d.paused_reason }}</span>
-            <form method="post" action="/devices/{{ d.dongle_id }}/enable" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small">Resume</button></form>
-          {% elif d.enabled %}<span class="rl-status s-submitted">On</span>
-            <form method="post" action="/devices/{{ d.dongle_id }}/disable" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small gx-btn--tonal">Turn off</button></form>
-          {% else %}<span class="rl-status s-skipped">Off</span>
-            <form method="post" action="/devices/{{ d.dongle_id }}/enable" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small">Enable</button></form>
-          {% endif %}
-        </td>
-        <td>
-          <form method="post" action="/devices/{{ d.dongle_id }}/options" class="gx-stack">{{ field() }}
-            <label class="rl-check"><input type="radio" name="mode" value="auto" {{ "checked" if d.mode == "auto" }}> Submit automatically</label>
-            <label class="rl-check"><input type="radio" name="mode" value="suggest" {{ "checked" if d.mode == "suggest" }}> Only suggest (you submit on the site)</label>
-            <span class="gx-note">To submit on the site you make the route public on comma, which shares every
-            segment, privacy-zone segments included. The site's picker doesn't know about your zones.</span>
-            <label class="rl-check"><input type="checkbox" name="record_drives" value="1" {{ "checked" if d.record_drives }}> Record drives (which model drove)</label>
-            <div><button class="gx-btn gx-btn--small gx-btn--tonal">Save</button></div>
-          </form>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  {% for d in devices %}
+  <div class="gx-row gx-row--wrap rl-device">
+    <div class="gx-row__info rl-device__name">
+      <span class="gx-row__label">{{ d.alias or "Device" }}
+        {% if d.paused_reason %}<span class="rl-status s-failed">Paused</span>{% elif d.enabled %}<span class="rl-status s-submitted">On</span>{% else %}<span class="rl-status s-skipped">Off</span>{% endif %}</span>
+      <span class="gx-row__desc rl-mono">{{ d.dongle_id }}</span>
+      {% if d.paused_reason %}<span class="gx-row__desc">{{ d.paused_reason }}</span>{% endif %}
+    </div>
+    <form method="post" action="/devices/{{ d.dongle_id }}/options" class="rl-device__options">{{ field() }}
+      <label class="rl-check"><input type="radio" name="mode" value="auto" {{ "checked" if d.mode == "auto" }}> Submit automatically</label>
+      <label class="rl-check"><input type="radio" name="mode" value="suggest" {{ "checked" if d.mode == "suggest" }}> Only suggest</label>
+      <label class="rl-check"><input type="checkbox" name="record_drives" value="1" {{ "checked" if d.record_drives }}> Record drives</label>
+      <button class="gx-btn gx-btn--small gx-btn--tonal">Save</button>
+    </form>
+    {% if d.paused_reason %}
+    <form method="post" action="/devices/{{ d.dongle_id }}/enable" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small">Resume</button></form>
+    {% elif d.enabled %}
+    <form method="post" action="/devices/{{ d.dongle_id }}/disable" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small gx-btn--tonal">Turn off</button></form>
+    {% else %}
+    <form method="post" action="/devices/{{ d.dongle_id }}/enable" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small">Enable</button></form>
+    {% endif %}
   </div>
+  {% endfor %}
+  {% if devices %}
   <div class="gx-row"><form method="post" action="/devices/refresh" class="rl-inline">{{ field() }}<button class="gx-btn gx-btn--small gx-btn--tonal"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>Refresh the device list</button></form></div>
   {% endif %}
 </section>

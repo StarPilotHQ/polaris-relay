@@ -58,6 +58,12 @@ def tile_url_ok(url: str) -> str | None:
   return f"https://{host}/{path}"
 
 
+STEP_LABELS = {
+  "contiguous": "All segments listed", "pinged": "Device online after the drive", "quiet": "Logs stopped arriving",
+  "settled": "Drive settled", "ready": "Logs complete", "filtered": "Checked against privacy zones",
+  "regrew": "More logs arrived", "grew_seen": "More logs arrived", "uploads_requested": "Files requested",
+  "submitted": "Submitted", "copy_error_since": "The site had trouble with the files",
+}
 FALLBACK_FORMATS = {"date": "%Y-%m-%d", "datetime": "%Y-%m-%d %H:%M UTC", "time": "%H:%M UTC"}
 
 
@@ -85,6 +91,7 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
   templates = Jinja2Templates(directory=str(HERE / "templates"))
   templates.env.globals["when"] = when
+  templates.env.globals["step_labels"] = STEP_LABELS
   comma_factory = comma_factory or (lambda token: CommaClient(token, config.comma_api, config.athena_api))
   site_factory = site_factory or (lambda token: SiteClient(config.polaris_host, token))
   worker = worker or Worker(config, sessionmaker, comma_factory, site_factory)

@@ -50,10 +50,10 @@ UPDATE_EVERY = timedelta(days=1)
 TOKEN_WARN = timedelta(days=7)
 ACTIVITY_DAYS = 30
 FILE_KINDS = ("logs", "cameras", "ecameras", "qcameras")
-NOT_SUBMITTABLE = "The site can't take this route. It was either blocked, already submitted, or something else prevented it."
+NOT_SUBMITTABLE = "The site can't take this drive."
 # Site errors no retry can fix, for this route: it ends as failed with this note.
 TERMINAL = {
-  "route_unusable": "The site can't use this drive (its recording time couldn't be confirmed, or it's too old).",
+  "route_unusable": "The site can't use this drive.",
   "suggestion_blocked": "The site no longer accepts these suggestions.",
   "suggestions_unknown": "The site no longer knows these suggestions.",
   "nothing_to_submit": "Nothing was left to submit.",
@@ -66,8 +66,7 @@ TERMINAL = {
   "too_many_ranges": "This drive has more suggestions than your daily range limit allows.",
   "qlogs_frozen": "The site already has different logs for this drive.",
   "bad_idempotency_key": "The site refused this drive's submit key.",
-  "scope_missing": "Your access token can't submit. Create one with \"Submit drives\" under Profile → Access tokens on the site and "
-                   "paste it in Setup.",
+  "scope_missing": "Your access token can't submit.",
 }
 # Site errors about the whole account: everything stops until the user acts on the site.
 ACCOUNT = {
@@ -102,7 +101,7 @@ class State:
     REQUESTING: "Asking the device for files", WAITING_FILES: "Waiting for the device to upload",
     TRANSFERRING: "Sending files", READY: "Ready to submit", SUBMITTING: "Submitting", PUBLIC: "Copying (route public)",
     SITE_COPYING: "Submitted; the site is checking the files",
-    SUBMITTED: "Submitted", SUGGESTED: "Suggestions ready", RECORDED: "Drive recorded", SKIPPED: "Skipped",
+    SUBMITTED: "Submitted", SUGGESTED: "Suggestions ready to submit", RECORDED: "Drive recorded", SKIPPED: "Skipped",
     EXPIRED: "Expired", FAILED: "Failed",
   }
 
@@ -627,7 +626,7 @@ class Worker:
   def skip(self, s: Session, comma: CommaClient, site: SiteClient, r: Route) -> None:
     if r.public_since:
       self.make_private(s, comma, r)
-    self.finish(s, r, State.SKIPPED, "You skipped this drive, so nothing was submitted." +
+    self.finish(s, r, State.SKIPPED, "You skipped this drive." +
                 (" The drive was recorded." if r.drive_recorded else ""), site)
 
   @staticmethod
@@ -742,7 +741,7 @@ class Worker:
     s.commit()
     if not r.picks:
       self.finish(s, r, State.RECORDED if r.drive_recorded else State.SKIPPED,
-                  "Your privacy zones now cover every suggested moment, so nothing more was sent.", site)
+                  "Your privacy zones now cover every suggested moment.", site)
       return False
     return True
 
@@ -826,7 +825,7 @@ class Worker:
       files.pop(seg)
     s.commit()
     if not files:
-      self.finish(s, r, State.SKIPPED, "Every segment was in or near a privacy zone, so nothing was sent.", site)
+      self.finish(s, r, State.SKIPPED, "Every segment was in or near a privacy zone.", site)
       return False
     created = site.create_route(r.fullname)
     r.handle, r.submittable, r.link = created["id"], bool(created.get("submittable")), created.get("link") or r.link
@@ -866,8 +865,7 @@ class Worker:
     if "submit" not in scopes:
       n = r.suggestions
       self.finish(s, r, State.RECORDED if r.drive_recorded else State.SKIPPED,
-                  f"{n} moment{'s' if n != 1 else ''} found, but your access token can't submit, so no files were "
-                  "requested from the device.", site)
+                  f"{n} moment{'s' if n != 1 else ''} found; your access token can't submit.", site)
       return False
     r.state, r.note = State.REQUESTING, ""
     return True
@@ -917,8 +915,7 @@ class Worker:
       lost = {int(k.split("/")[0]) for k in r.upload_unavailable}
       self.set_picks(r, [p for p in r.picks or [] if not (set(p["segments"]) | set(p["preview_segments"])) & lost])
       if not r.picks:
-        self.finish(s, r, State.EXPIRED, "The device no longer has the files these moments need, so nothing was "
-                                         "submitted.", site)
+        self.finish(s, r, State.EXPIRED, "The device no longer has the files these moments need.", site)
         return False
       wanted -= len(gone)
     r.note = "The device is offline; it uploads when it's back online." if result.get("queued") else \
@@ -971,8 +968,7 @@ class Worker:
     wait = min(timedelta(seconds=r.upload_wait_s * 2) if r.upload_wait_s else UPLOAD_WAIT_FIRST, UPLOAD_WAIT_MAX)
     r.upload_wait_s, r.upload_retry_at = int(wait.total_seconds()), now + wait
     r.upload_vanished += 1
-    r.note = (f"{len(gone)} file(s) left the device's upload queue without uploading (it restarted, or they were "
-              f"cancelled in comma connect); asking again in {spoken(wait)}.")
+    r.note = f"{len(gone)} file(s) left the device's upload queue; asking again in {spoken(wait)}."
     return False
 
   def waiting_files(self, s: Session, comma: CommaClient, site: SiteClient, r: Route, d: Device,
@@ -994,14 +990,12 @@ class Worker:
     r.files_ready_at = now
     if d.mode == "suggest":
       n = r.suggestions
-      self.finish(s, r, State.SUGGESTED, f"{n} suggestion{'s' if n != 1 else ''} ready. To submit them, make the route "
-                  "public in comma connect and open it on the site. Making it public shares every segment, privacy-zone "
-                  "segments included, and the site's picker doesn't know about your zones.", site)
+      self.finish(s, r, State.SUGGESTED, "", site)
       return False
     r.transfer = db.get(s, "transfer")
     if r.transfer == "public" and not d.is_owner:
       r.transfer = "relay"
-      r.note = "Only the device's owner can make its routes public, so this drive is relayed."
+      r.note = "Relayed: only the device's owner can make its routes public."
     if r.transfer == "relay":
       r.state = State.TRANSFERRING
       return True
@@ -1089,8 +1083,7 @@ class Worker:
     timings = dict(r.timings or {})
     submitted = datetime.fromisoformat(timings.get("submitted", now_utc().isoformat()))
     if now_utc() - submitted > timedelta(days=float(db.get(s, "files_wait_days"))):
-      self.finish(s, r, State.SUBMITTED, submitted_note(r) + " The site was still checking the files when this stopped "
-                                                             "watching.")
+      self.finish(s, r, State.SUBMITTED, submitted_note(r) + " The site hadn't finished checking the files.")
       return False
     try:
       sub = site.submission(r.submission_id)
@@ -1108,8 +1101,7 @@ class Worker:
       since = datetime.fromisoformat(timings.setdefault("copy_error_since", now_utc().isoformat()))
       r.timings = timings
       if now_utc() - since >= COPY_ERROR_GRACE:
-        self.finish(s, r, State.SUBMITTED, submitted_note(r) + " The site had trouble with the files; check the "
-                                                               "submission on the site.")
+        self.finish(s, r, State.SUBMITTED, submitted_note(r) + " The site had trouble with the files.")
         notify.event(s, f"copy_error:{self.route_key(r)}", "Polaris Relay: the site couldn't take a drive's files",
                      f"A submitted drive's files didn't make it into review. See your submissions: "
                      f"{self.config.site_url('/status')}")

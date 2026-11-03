@@ -77,7 +77,7 @@ def test_activity_renders_after_files_leave_the_queue(log_schema, clock, make_wo
   assert route(w).upload_vanished == 1 and all(isinstance(v, str) for v in route(w).timings.values())
   edit(w, timings={**route(w).timings, "upload_vanished": 2})  # what the bug stored: the page mustn't trip on it
   page = web(w).get("/")
-  assert page.status_code == 200 and "left the upload queue" in page.text
+  assert page.status_code == 200 and "Left the upload queue" in page.text
 
 
 def test_a_failure_while_ending_a_spent_public_route_stays_with_the_route(log_schema, clock, make_worker):
@@ -478,7 +478,7 @@ def test_relay_copy_watch_gives_up_after_the_files_window(log_schema, clock, mak
   until(w, clock, State.SITE_COPYING, step_min=10)
   clock.advance(days=3, hours=1)
   w.tick()
-  assert route(w).state == State.SUBMITTED and "still checking" in route(w).note
+  assert route(w).state == State.SUBMITTED and "hadn't finished checking" in route(w).note
 
 
 def test_a_hung_notifier_is_left_behind_and_tried_again_later(log_schema, clock, make_worker, monkeypatch):

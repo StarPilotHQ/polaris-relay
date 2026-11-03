@@ -2,8 +2,7 @@
 {% block title %}Activity · Polaris Relay{% endblock %}
 {% block content %}
 <div class="gx-page-header"><div><h1>Activity</h1>
-  <p>One row per drive since setup. Moments are suggested by the site; only those, never whole drives or anything in a
-  privacy zone, are sent.</p></div></div>
+  <p>One row per drive since setup.</p></div></div>
 <div id="activity" hx-get="/" hx-trigger="every 15s" hx-select="#activity" hx-swap="outerHTML">
 <section class="gx-card">
   <div class="gx-section__header"><i class="bi bi-speedometer2" aria-hidden="true"></i><h2 class="gx-section__title">Drives</h2>{% if routes %}<span class="gx-section__count">{{ routes|length }}</span>{% endif %}</div>
@@ -11,40 +10,39 @@
   <p class="gx-empty">No drives yet. Drives that start after setup show up here once they've finished uploading.</p>
 {% else %}
 <div class="rl-table-wrap">
-<table class="rl-table">
+<table class="rl-table rl-drives">
   <thead><tr><th>Drive</th><th>Status</th><th>Moments</th><th></th></tr></thead>
   <tbody>
   {% for r in routes %}
     {% set d = devices.get(r.dongle_id) %}
     <tr>
-      <td><strong>{{ d.alias if d and d.alias else "Device" }}</strong>
+      <td class="rl-nowrap"><strong>{{ d.alias if d and d.alias else "Device" }}</strong>
         <span class="rl-sub">{{ when(r.start_time) }}</span></td>
       <td><span class="rl-status s-{{ r.state }}">{{ labels.get(r.state, r.state) }}{% if r.deferred %} (deferred){% endif %}</span>
         {% if r.state == ready and not r.skip_requested %}{% set left = ((submit_at(r) - now).total_seconds() / 60)|round(0, "ceil")|int %}
           <span class="rl-sub">Submits automatically {{ "in under a minute" if left <= 1 else "in " ~ left ~ " minutes" }}
           ({{ when(submit_at(r), "time") }}).</span>{% endif %}
         {% if r.note %}<span class="rl-sub">{{ r.note }}</span>{% endif %}
-        {% if r.error and r.state not in final %}<span class="rl-sub rl-error-text">Last error: {{ r.error }}</span>{% endif %}</td>
-      <td>
+        {% if r.error and r.state not in final %}<span class="rl-sub rl-error-text">Last error: {{ r.error }}</span>{% endif %}
+        <details class="rl-details"><summary>Details</summary>
+          <dl class="rl-timings">
+            {% for name, at in (r.timings or {}).items()|selectattr("1", "string")|sort(attribute="1") %}<dt>{{ step_labels.get(name, name.replace("_", " ")|capitalize) }}</dt><dd>{{ when(at) }}</dd>{% endfor %}
+            {% if r.upload_vanished %}<dt>Left the upload queue</dt><dd>{{ r.upload_vanished }} time{{ "s" if r.upload_vanished != 1 }}</dd>{% endif %}
+          </dl>
+        </details></td>
+      <td class="rl-nowrap">
         {% if r.submitted %}{{ r.submitted }} submitted{% elif r.suggestions %}{{ r.suggestions }} suggested{% else %}-{% endif %}
         {% if r.needs_input %}<span class="rl-sub">{{ r.needs_input }} need{{ "s" if r.needs_input == 1 }} a reviewer's input</span>{% endif %}
         {% if r.excluded %}<span class="rl-sub">{{ r.excluded|length }} segment{{ "s" if r.excluded|length != 1 }} kept private</span>{% endif %}
       </td>
-      <td>
+      <td class="rl-nowrap">
         <div class="rl-actions">
         {% if r.link and r.link.startswith(site_prefix) %}<a class="gx-btn gx-btn--small gx-btn--tonal" href="{{ r.link }}" target="_blank" rel="noopener noreferrer">Open on the site<i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>{% endif %}
         {% if skippable(r) and not r.skip_requested %}
         <form method="post" action="/drives/{{ keys[r.fullname] }}/skip" class="rl-inline"><input type="hidden" name="csrf" value="{{ csrf }}">
-          <button class="gx-btn gx-btn--small gx-btn--tonal" title="Don't want to submit this drive, or want to fill it in yourself on the site? Skip it and Polaris Relay submits nothing for it.">Skip</button></form>
+          <button class="gx-btn gx-btn--small gx-btn--tonal" title="Submit nothing for this drive">Skip</button></form>
         {% endif %}
-        </div>
-        <details class="rl-details"><summary>Details</summary>
-          <dl class="rl-timings">
-            {% for name, at in (r.timings or {}).items() if at is string %}<dt>{{ name }}</dt><dd>{{ when(at) }}</dd>{% endfor %}
-            {% if r.upload_vanished %}<dt>left the upload queue</dt><dd>{{ r.upload_vanished }} time{{ "s" if r.upload_vanished != 1 }}</dd>{% endif %}
-            {% if r.grew_after_ready %}<dt>note</dt><dd>more logs arrived after it looked complete</dd>{% endif %}
-          </dl>
-        </details></td>
+        </div></td>
     </tr>
   {% endfor %}
   </tbody>

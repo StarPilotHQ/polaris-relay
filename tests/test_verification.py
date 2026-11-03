@@ -166,7 +166,7 @@ def test_a_site_copy_of_a_device_turned_off_still_ends(log_schema, clock, make_w
   set_device(w, paused_reason="verify again")
   clock.advance(days=3, hours=1)
   w.tick()
-  assert route(w).state == State.SUBMITTED and "still checking" in route(w).note
+  assert route(w).state == State.SUBMITTED and "hadn't finished checking" in route(w).note
 
 
 def test_a_site_copy_ends_at_the_window_even_while_the_site_is_down(log_schema, clock, make_worker):
