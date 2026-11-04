@@ -49,8 +49,6 @@ class Device(Base):
   paused_reason: Mapped[str | None] = mapped_column(Text)
   # It submitted through the site before, so a later "not verified" most likely means a revoke or a lapse.
   submitted_before: Mapped[bool] = mapped_column(Boolean, default=False)
-  # Only the owner can make a route public; shared devices always relay.
-  is_owner: Mapped[bool] = mapped_column(Boolean, default=True)
   enabled_at: Mapped[datetime | None]
 
 
@@ -144,6 +142,7 @@ class Route(Base):
 
 
 ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = ()
+REMOVED_COLUMNS: tuple[tuple[str, str], ...] = (("devices", "is_owner"),)
 
 
 def make_sessionmaker(data_dir: Path):
@@ -160,6 +159,9 @@ def make_sessionmaker(data_dir: Path):
     for table, column, ddl in ADDED_COLUMNS:
       if column not in {c["name"] for c in inspect(conn).get_columns(table)}:
         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+    for table, column in REMOVED_COLUMNS:
+      if column in {c["name"] for c in inspect(conn).get_columns(table)}:
+        conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column}"))
   for p in (path, path.with_name(path.name + "-wal"), path.with_name(path.name + "-shm")):
     if p.exists():
       p.chmod(0o600)

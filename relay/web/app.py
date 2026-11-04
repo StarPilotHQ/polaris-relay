@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from relay import __version__, cluster, db, notify
-from relay.comma import CommaClient, CommaError, token_expiry
+from relay.comma import CommaClient, CommaError, read_only, token_expiry
 from relay.config import Config
 from relay.db import Device, Notifier, Route, Zone, now_utc
 from relay.pipeline import State, Worker, deprecation_parts, filter_changed, version_banner
@@ -284,7 +284,6 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
             "zone_count": len(s.scalars(select(Zone.id)).all()),
             "comma_set": bool(db.get(s, "comma_token")), "comma_expiry": token_expiry(db.get(s, "comma_token") or ""),
             "token_info": db.get(s, "token_info"), "onboarded": db.get(s, "onboarded_at"),
-            "public_owner_note": any(not d.is_owner for d in s.scalars(select(Device))),
             **{k: db.get(s, k) for k in keys}}
 
   @app.get("/setup", response_class=HTMLResponse)
@@ -303,17 +302,22 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
     return "/settings" if db.get(s, "onboarded_at") else "/setup"
 
   def refresh_devices(s: Session, comma: CommaClient) -> int:
-    found = comma.devices()
-    for dev in found:
+    owned = 0
+    for dev in comma.devices():
       dongle = (dev.get("dongle_id") or "").lower()
       if len(dongle) != 16:
         continue
-      d = s.get(Device, dongle) or Device(dongle_id=dongle, enabled=False)
+      d = s.get(Device, dongle)
+      if read_only(dev):
+        if d is not None:
+          s.delete(d)
+        continue
+      d = d or Device(dongle_id=dongle, enabled=False)
       d.alias, d.last_athena_ping = dev.get("alias") or dev.get("device_type") or "", int(dev.get("last_athena_ping") or 0)
-      d.is_owner = dev.get("is_owner", True) is not False
       s.add(d)
+      owned += 1
     s.commit()
-    return len(found)
+    return owned
 
   @app.post("/setup/comma")
   def set_comma(request: Request, token: str = Form(""), _=Depends(require_user), __=Depends(check_csrf),

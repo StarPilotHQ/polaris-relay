@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from relay import __version__, db, notify, privacy, updates
 from relay.comma import (KIND_FILES, NEVER_KINDS, CommaAuthError, CommaClient, CommaError, CommaNotFound, LinkExpired,
-                         token_expiry)
+                         read_only, token_expiry)
 from relay.config import Config
 from relay.db import Device, Route, Zone, now_utc
 from relay.qlogs import read_scans
@@ -399,13 +399,17 @@ class Worker:
         found[dongle] = comma.routes(dongle, since - timedelta(hours=1), now)
       except CommaAuthError:
         raise
-      except CommaError as e:  # one device's trouble (shared with someone else, say) mustn't stop the others
+      except CommaError as e:  # one device's trouble mustn't stop the others
         log.warning("couldn't list a device's routes (%s)", "comma didn't answer" if e.transient else type(e).__name__)
     for dev in devices:
-      if (d := s.get(Device, dev.get("dongle_id", ""))) is not None:
-        d.last_athena_ping = int(dev.get("last_athena_ping") or 0)
-        d.alias = dev.get("alias") or d.alias
-        d.is_owner = dev.get("is_owner", True) is not False
+      if (d := s.get(Device, dev.get("dongle_id", ""))) is None:
+        continue
+      if read_only(dev):
+        found.pop(d.dongle_id, None)
+        s.delete(d)
+        continue
+      d.last_athena_ping = int(dev.get("last_athena_ping") or 0)
+      d.alias = dev.get("alias") or d.alias
     newest: dict[str, datetime] = {}
     for dongle, metas in found.items():
       for m in metas:
@@ -993,9 +997,6 @@ class Worker:
       self.finish(s, r, State.SUGGESTED, "", site)
       return False
     r.transfer = db.get(s, "transfer")
-    if r.transfer == "public" and not d.is_owner:
-      r.transfer = "relay"
-      r.note = "Relayed: only the device's owner can make its routes public."
     if r.transfer == "relay":
       r.state = State.TRANSFERRING
       return True

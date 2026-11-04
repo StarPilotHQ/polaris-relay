@@ -117,6 +117,21 @@ def test_refusals_dont_say_why_but_the_log_does(tmp_path, fakes, caplog):
                    "refused a request: origin not in ALLOWED_ORIGINS ('https://evil.test')"]
 
 
+def test_setup_leaves_out_shared_devices(tmp_path, fakes):
+  comma, _ = fakes
+  comma.devices_payload = [{"dongle_id": DONGLE, "alias": "Test car", "is_owner": True},
+                           {"dongle_id": "b" * 16, "alias": "Someone else's", "is_owner": False}]
+  client, sm = make_client(tmp_path, fakes, INSECURE_ALLOW_NO_AUTH="1")
+  with sm() as s:
+    s.add(Device(dongle_id="b" * 16, alias="Someone else's", enabled=True))
+    s.commit()
+  token = csrf(client.get("/setup").text)
+  page = html.unescape(client.post("/setup/comma", data={"csrf": token, "token": JWT}, headers=ORIGIN).text)
+  assert "Found 1 device." in page and "Test car" in page and "Someone else's" not in page
+  with sm() as s:
+    assert s.get(Device, "b" * 16) is None
+
+
 def test_onboarding_flow(tmp_path, fakes):
   comma, site = fakes
   client, sm = make_client(tmp_path, fakes, INSECURE_ALLOW_NO_AUTH="1")

@@ -26,6 +26,10 @@ ROUTE_PAGES = 20
 log = logging.getLogger("relay")
 
 
+def read_only(device: dict) -> bool:
+  return device.get("is_owner") is False
+
+
 class CommaError(Exception):
   """`transient`: comma or the network didn't answer (unreachable, 5xx); waiting is the fix, not giving up."""
 

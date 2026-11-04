@@ -1,11 +1,13 @@
 import html
 import re
+import sqlite3
 from datetime import timedelta
 
 import bcrypt
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from relay import db, notify, pipeline
 from relay.comma import CommaClient
@@ -223,12 +225,35 @@ def test_copy_error_stops_waiting_out_the_cap(log_schema, clock, make_worker):
   assert route(w).state == State.FAILED and not comma.public and site.withdrawn == ["sub1"]
 
 
-def test_non_owner_device_relays_instead(log_schema, clock, make_worker):
+def test_a_device_that_becomes_shared_is_dropped(log_schema, clock, make_worker):
   comma, site = FakeComma(clock, drive(log_schema, n=2), owner=False), FakeSite()
   w = make_worker(comma, site)
-  onboard(w, transfer="public")
-  run_until_settled(w, clock)
-  assert route(w).state == State.SUBMITTED and not comma.public_changes and site.files
+  onboard(w)
+  w.tick()
+  with w.sessionmaker() as s:
+    assert s.get(Device, DONGLE) is None and not s.scalars(select(Route)).all()
+  assert not site.requests
+  comma.requests.clear()
+  clock.advance(minutes=10)
+  w.tick()
+  assert not [q for q in comma.requests if DONGLE in q.url.path]
+
+
+def test_the_removed_owner_column_is_dropped_from_an_existing_database(tmp_path):
+  make_sessionmaker(tmp_path)
+  conn = sqlite3.connect(tmp_path / "relay.db")
+  ddl = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'devices'").fetchone()[0]
+  conn.execute("DROP TABLE devices")
+  conn.execute(ddl.replace("dongle_id VARCHAR(16) NOT NULL,", "dongle_id VARCHAR(16) NOT NULL, is_owner BOOLEAN NOT NULL,"))
+  assert "is_owner" in [c[1] for c in conn.execute("PRAGMA table_info(devices)")]
+  conn.commit()
+  conn.close()
+  with make_sessionmaker(tmp_path)() as s:
+    s.add(Device(dongle_id=DONGLE))
+    s.commit()
+  conn = sqlite3.connect(tmp_path / "relay.db")
+  assert "is_owner" not in [c[1] for c in conn.execute("PRAGMA table_info(devices)")]
+  conn.close()
 
 
 def test_expired_file_link_is_listed_again(log_schema, clock, make_worker):

@@ -94,9 +94,7 @@
         <span><strong>Make the route public briefly</strong>. The route is made public, the site copies the segments
         from comma, and the route is made private again. Uses almost no bandwidth here, but while it's public
         <strong>anyone with the route's name can read the whole route, privacy-zone segments included</strong>, for up
-        to {{ public_cap_h|round(1) }} hours, and longer if this machine stops mid-step.
-        {% if public_owner_note %}Devices shared with you (not yours) can't have their routes made public, so they always
-        relay.{% endif %}</span></label>
+        to {{ public_cap_h|round(1) }} hours, and longer if this machine stops mid-step.</span></label>
     </div>
     <div>
       <label class="rl-inline-field">Also keep private this many segments on each side of a zone segment

@@ -51,9 +51,9 @@ Open http://localhost:8080, sign in and follow Setup:
    before.
 2. Paste your access token from the site.
 3. Enable your devices, and choose per device: submit automatically or only suggest, and whether to record drives.
-   Only drives that start after you enable a device are picked up. With **Only suggest**, each drive links to the site
-   to submit it yourself; that means making the route public on comma, which shares every segment, privacy-zone
-   segments included, and the site's picker doesn't know about your zones.
+   Devices shared with you aren't listed. Only drives that start after you enable a device are picked up. With
+   **Only suggest**, each drive links to the site to submit it yourself; that means making the route public on comma,
+   which shares every segment, privacy-zone segments included, and the site's picker doesn't know about your zones.
 4. Draw your privacy zones on the map. "Suggest zones from my recent drives" proposes places your drives often start
    or end, worked out on your machine from comma's route list.
 5. Choose how files reach the site (below), then finish setup.

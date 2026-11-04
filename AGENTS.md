@@ -106,8 +106,8 @@ what the code or README already says plainly.
 
 ## Traps
 
-- Nothing is released yet, so new `Route` columns aren't in `ADDED_COLUMNS`: delete a pre-release dev database
-  (`DATA_DIR/relay.db*`) when the models change. Once a release ships, add columns there instead.
+- Releases are out, so existing databases must keep working: a new column goes in `ADDED_COLUMNS` with a DDL default, and
+  a column taken off a model goes in `REMOVED_COLUMNS` (left in place, its `NOT NULL` fails every insert).
 - SQLAlchemy's identity map holds objects weakly: a test of a re-read must keep a reference to the object (the
   pipeline does), or the session reloads it anyway and the test passes without the re-read.
 - The worker only hears the site's headers on calls it makes; a test of something learned from a response must make
@@ -159,6 +159,9 @@ From comma's own clients, not its docs (old Connect `src/api.js`, new Connect `s
   restart (`AthenadUploadQueue` param) except the item uploading at that moment; a failing item is dropped after 30
   tries 10 s apart, a 401/403/412 from the upload URL counts as done, a cancelled item never comes back. athenad never
   reports any of that.
+- `/v1/me/devices/` also lists devices shared with the account, with `is_owner: false` (checked on a real account). They're
+  read-only, so `read_only` drops them, also from an existing database. A device missing from the list isn't removed: an
+  empty answer shouldn't lose its settings.
 - New Connect treats a device as online when `last_athena_ping` is within 120 s; Polaris Relay uses 10 minutes.
 
 ## Not verified against reality
