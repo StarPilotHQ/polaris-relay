@@ -1,6 +1,6 @@
 [project]
 name = "polaris-relay"
-version = "0.1.2"
+version = "0.1.3"
 description = "Contribute your StarPilot drives to Operation Polaris from your own machine: only the suggested moments, never your privacy zones."
 license = "MIT"
 requires-python = ">=3.12"
