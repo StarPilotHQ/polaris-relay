@@ -3,7 +3,7 @@
 {% block content %}
 <div class="gx-page-header"><div><h1>Activity</h1>
   <p>One row per drive since setup.</p></div></div>
-<div id="activity" hx-get="/" hx-trigger="every 15s" hx-select="#activity" hx-swap="outerHTML">
+<div id="activity" hx-get="/" hx-trigger="every 5s" hx-select="#activity" hx-swap="outerHTML">
 <section class="gx-card">
   <div class="gx-section__header"><i class="bi bi-speedometer2" aria-hidden="true"></i><h2 class="gx-section__title">Drives</h2>{% if routes %}<span class="gx-section__count">{{ routes|length }}</span>{% endif %}</div>
 {% if not routes %}
@@ -24,7 +24,7 @@
           ({{ when(submit_at(r), "time") }}).</span>{% endif %}
         {% if r.note %}<span class="rl-sub">{{ r.note }}</span>{% endif %}
         {% if r.error and r.state not in final %}<span class="rl-sub rl-error-text">Last error: {{ r.error }}</span>{% endif %}
-        <details class="rl-details"><summary>Details</summary>
+        <details class="rl-details" id="details-{{ keys[r.fullname] }}"><summary>Details</summary>
           <dl class="rl-timings">
             {% for name, at in (r.timings or {}).items()|selectattr("1", "string")|sort(attribute="1") %}<dt>{{ step_labels.get(name, name.replace("_", " ")|capitalize) }}</dt><dd>{{ when(at) }}</dd>{% endfor %}
             {% if r.upload_vanished %}<dt>Left the upload queue</dt><dd>{{ r.upload_vanished }} time{{ "s" if r.upload_vanished != 1 }}</dd>{% endif %}
@@ -52,3 +52,4 @@
 </section>
 </div>
 {% endblock %}
+{% block scripts %}<script src="/static/activity.js?v={{ asset_version }}"></script>{% endblock %}

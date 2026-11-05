@@ -29,6 +29,9 @@ what the code or README already says plainly.
   plain text with ISO dates, since they have no browser.
 - Drive notes and status copy say what happened in a few words ("Suggestions ready to submit"), not how to do the next
   step or why: people can work that out. A long note on the activity list was cut once for this.
+- The activity list polls every 5 s, so a transfer's note says what's moving now (`Downloading file 3 of 26.`); it's
+  the only sign of life during a long file. `activity.js` keeps open Details open across swaps, which needs each to have
+  an id. Don't add a "this page updates" line.
 - Commits are conventional commits with no scope and, unless it's really needed, no body: `fix: the description`,
   lowercase, imperative, no trailing period. Not `fix(pipeline): ...`.
 

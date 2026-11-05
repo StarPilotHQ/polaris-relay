@@ -176,6 +176,22 @@ def test_a_file_kind_the_site_refuses_isnt_counted_as_sent(log_schema, clock, ma
   assert route(w).state == State.FAILED and not site.submits and not route(w).relayed
 
 
+def test_the_activity_list_says_which_file_is_moving(log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, drive(log_schema, n=2)), FakeSite()
+  w = make_worker(comma, site)
+  real, notes = site.handler, []
+
+  def hook(request):
+    if "/files/" in request.url.path:
+      notes.append(route(w).note)
+    return real(request)
+  site.handler = hook
+  onboard(w)
+  run_until_settled(w, clock)
+  assert notes[:2] == ["Uploading file 1 of 8.", "Uploading file 2 of 8."] and notes[-1] == "Uploading file 8 of 8."
+  assert route(w).state == State.SUBMITTED and "file" not in route(w).note
+
+
 def installed_before_the_file_names_fix(w, **fields):
   with w.sessionmaker() as s:
     s.delete(s.get(db.Setting, "repair:relayed_file_names"))

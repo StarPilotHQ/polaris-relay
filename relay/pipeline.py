@@ -1017,6 +1017,9 @@ class Worker:
         r.state = State.WAITING_FILES
         return True
       dest = self.work_dir(r) / "files" / str(seg) / files[kind][seg][0]
+      position = f"file {len(r.relayed or []) + 1} of {len(needed(r))}"
+      r.note = f"Downloading {position}."
+      s.commit()
       try:
         try:
           sha, _ = tagged(key, comma.download, files[kind][seg][1], dest)
@@ -1028,6 +1031,8 @@ class Worker:
           sha, _ = tagged(key, comma.download, files[kind][seg][1], dest)
         self.beat()
         self.guard(r, seg)
+        r.note = f"Uploading {position}."
+        s.commit()
         tagged(key, site.put_file, r.handle, seg, kind, dest, sha, files[kind][seg][0])
       except SiteError as e:
         if e.code == "already_submitted":  # a submit went through and its answer was lost: repeat it
@@ -1038,7 +1043,6 @@ class Worker:
       finally:
         dest.unlink(missing_ok=True)
       r.relayed = [*(r.relayed or []), key]
-      r.note = f"Sent {len(r.relayed)} of {len(needed(r))} files."
       s.commit()
       self.beat()
     r.note = ""
