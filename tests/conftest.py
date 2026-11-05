@@ -22,6 +22,7 @@ DONGLE = "0123456789abcdef"
 ROUTE_NAME = "00000042--0a1b2c3d4e"
 ROUTE = f"{DONGLE}|{ROUTE_NAME}"
 T0 = datetime(2026, 11, 1, 8, 0, tzinfo=UTC)
+API_FILE_KINDS = ("rlog", "fcamera", "ecamera", "qcamera")
 AFTER_DRIVE = T0 + timedelta(minutes=10)  # a device that pinged once after the drive, then went offline
 HOME = (45.0, -100.0)
 FAR = (45.2, -100.3)
@@ -257,13 +258,22 @@ class FakeSite:
                                        "ranges_left_today": 90, "link": "https://site.test/r", "suggestions": sugg,
                                        "needs": {}})
     if m := re.fullmatch(r"/routes/h1/files/(\d+)/(\w+)", path):
+      if m[2] not in API_FILE_KINDS:
+        return httpx.Response(400, json={"error": "kind_not_allowed", "message": "Only rlog, fcamera, ecamera and qcamera"})
       data = request.read()
       assert hashlib.sha256(data).hexdigest() == request.headers["x-sha256"]
       self.files[(int(m[1]), m[2])] = self.files.get((int(m[1]), m[2]), 0) + 1
       return httpx.Response(200, json={"stored": True})
     if path == "/routes/h1/submit":
-      self.submits.append((request.headers.get("idempotency-key"), json.loads(request.content)))
-      self.transfer = json.loads(request.content)["transfer"]
+      body = json.loads(request.content)
+      if body["transfer"] == "relay":
+        segments = [int(s.removeprefix("s-")) for s in body["suggestions"]]
+        missing = [{"segment": seg, "kind": kind} for seg in segments for kind in API_FILE_KINDS
+                   if (seg, kind) not in self.files]
+        if missing:
+          return httpx.Response(409, json={"error": "files_missing", "message": "not there yet", "missing": missing})
+      self.submits.append((request.headers.get("idempotency-key"), body))
+      self.transfer = body["transfer"]
       return httpx.Response(201, json={"submission_id": "sub1", "status": "submitted",
                                        "ranges": len(json.loads(request.content)["suggestions"])})
     if path == "/routes/h1/drive":

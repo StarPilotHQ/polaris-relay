@@ -16,6 +16,8 @@ from relay import __version__
 USER_AGENT = f"polaris-relay/{__version__}"
 FILE_DEADLINE_S = 30 * 60  # one upload, wall clock
 CHUNK = 1 << 20
+API_KIND = {"logs": "rlog", "cameras": "fcamera", "ecameras": "ecamera", "qcameras": "qcamera"}
+FROM_API = {v: k for k, v in API_KIND.items()}
 
 
 class SiteError(Exception):
@@ -171,7 +173,7 @@ class SiteClient:
 
   def put_file(self, handle: str, segment: int, kind: str, path: Path, sha256: str, name: str,
                deadline_s: float = FILE_DEADLINE_S) -> None:
-    self._call("PUT", f"/routes/{handle}/files/{segment}/{kind}", content=_chunks(path, deadline_s),
+    self._call("PUT", f"/routes/{handle}/files/{segment}/{API_KIND[kind]}", content=_chunks(path, deadline_s),
                headers={"X-Sha256": sha256, "X-File-Name": name, "Content-Type": "application/octet-stream",
                         "Content-Length": str(path.stat().st_size)})
 

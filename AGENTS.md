@@ -76,6 +76,10 @@ what the code or README already says plainly.
   repeat. A withdraw the site never answers ends the route after the files window, telling the user to withdraw it
   themselves (the route is already private).
 - Steps that move backward count `regressions`, which never reset; `attempts` reset only when a step moves forward.
+- Inside, file kinds are comma's listing keys (`logs`, `cameras`, `ecameras`, `qcameras`); the API names them `rlog`,
+  `fcamera`, `ecamera`, `qcamera`. Translate at the boundary (`site.API_KIND`, `FROM_API`). They were once sent untranslated:
+  the site refused every file, the refusal counted as sent, and relay mode never uploaded anything. `FakeSite` now refuses
+  other names and answers `files_missing` as the site does; keep it as strict as the API, since it's what the tests trust.
 - Route-level site errors no retry fixes are in `pipeline.TERMINAL`, account-level ones in `pipeline.ACCOUNT`; add new
   site error codes to one of them rather than letting them burn retries.
 - `discover` makes every comma call before writing anything: a pending write autoflushes on the next query and would

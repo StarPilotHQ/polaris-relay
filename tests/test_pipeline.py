@@ -25,7 +25,7 @@ def test_auto_submit_relay_end_to_end(log_schema, clock, make_worker):
   r = route(w)
   assert r.state == State.SUBMITTED and r.submitted == 4 and r.needs_input == 2
   assert site.drives == 1
-  assert set(site.files) == {(s, k) for s in range(4) for k in ("logs", "cameras", "ecameras", "qcameras")}
+  assert set(site.files) == {(s, k) for s in range(4) for k in ("rlog", "fcamera", "ecamera", "qcamera")}
   assert all(n == 1 for n in site.files.values())
   assert not comma.public_changes
   assert set(r.timings) >= {"pinged", "quiet", "settled", "contiguous", "ready"}
@@ -66,7 +66,7 @@ def test_regrown_route_goes_back_to_waiting(log_schema, clock, make_worker, monk
 
 def test_resumes_after_restart_mid_transfer(log_schema, clock, make_worker):
   comma, site = FakeComma(clock, plain_drive(log_schema, 2)), FakeSite()
-  site.fail = {r"PUT /routes/h1/files/1/cameras": [(500, {"error": "boom"})] * 3}
+  site.fail = {r"PUT /routes/h1/files/1/fcamera": [(500, {"error": "boom"})] * 3}
   w = make_worker(comma, site)
   onboard(w)
   run_until_settled(w, clock, ticks=4)

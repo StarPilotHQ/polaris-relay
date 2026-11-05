@@ -56,7 +56,7 @@ def test_zone_added_mid_transfer_stops_the_loop(log_schema, clock, make_worker):
 
   def hook(request):
     response = real(request)
-    if request.url.path.endswith("/files/0/logs"):
+    if request.url.path.endswith("/files/0/rlog"):
       add_home_zone(w)  # the user adds a zone while the first file is uploading
     return response
   site.handler = hook
@@ -156,6 +156,24 @@ def test_forbidden_route_is_not_an_auth_failure(log_schema, clock, make_worker):
   with w.sessionmaker() as s:
     assert not db.get(s, "pause:comma")
   assert route(w).attempts > 0
+
+
+def test_a_file_the_site_says_is_missing_is_sent_again(log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, drive(log_schema, n=2)), FakeSite()
+  site.fail = {r"POST /routes/h1/submit": [(409, {"error": "files_missing", "missing": [{"segment": 0, "kind": "rlog"}]})]}
+  w = make_worker(comma, site)
+  onboard(w)
+  run_until_settled(w, clock)
+  assert route(w).state == State.SUBMITTED and site.files[(0, "rlog")] == 2 and site.files[(0, "fcamera")] == 1
+
+
+def test_a_file_kind_the_site_refuses_isnt_counted_as_sent(log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, drive(log_schema, n=2)), FakeSite()
+  site.fail = {r"PUT /routes/h1/files/\d+/\w+": [(400, {"error": "kind_not_allowed", "message": "no"})]}
+  w = make_worker(comma, site)
+  onboard(w)
+  run_until_settled(w, clock)
+  assert route(w).state == State.FAILED and not site.submits and not route(w).relayed
 
 
 def test_files_missing_loop_backs_off_and_ends(log_schema, clock, make_worker):

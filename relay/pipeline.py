@@ -21,7 +21,7 @@ from relay.comma import (KIND_FILES, NEVER_KINDS, CommaAuthError, CommaClient, C
 from relay.config import Config
 from relay.db import Device, Route, Zone, now_utc
 from relay.qlogs import read_scans
-from relay.site import DeviceNotVerified, RateLimited, SiteClient, SiteError, StorageFull, TokenRejected, extract_schema
+from relay.site import FROM_API, DeviceNotVerified, RateLimited, SiteClient, SiteError, StorageFull, TokenRejected, extract_schema
 
 log = logging.getLogger("relay")
 
@@ -63,6 +63,8 @@ TERMINAL = {
   "qlog_mismatch": "The site says this drive's logs belong to another device.",
   "segment_excluded": "The site already treats a segment as private that this drive tried to send.",
   "too_large": "A file was larger than the site accepts.",
+  "kind_not_allowed": "The site refused a file's type.",
+  "bad_file_name": "The site refused a file's name.",
   "too_many_ranges": "This drive has more suggestions than your daily range limit allows.",
   "qlogs_frozen": "The site already has different logs for this drive.",
   "bad_idempotency_key": "The site refused this drive's submit key.",
@@ -1031,7 +1033,7 @@ class Worker:
         if e.code == "already_submitted":  # a submit went through and its answer was lost: repeat it
           r.state = State.SUBMITTING
           return True
-        if e.code not in ("segment_not_needed", "kind_not_allowed"):
+        if e.code != "segment_not_needed":
           raise
       finally:
         dest.unlink(missing_ok=True)
@@ -1058,7 +1060,7 @@ class Worker:
         if public:
           r.state = State.WAITING_FILES
         else:
-          gone = {f"{m.get('segment')}/{m.get('kind')}" for m in e.body.get("missing", [])}
+          gone = {f"{m.get('segment')}/{FROM_API.get(m.get('kind'))}" for m in e.body.get("missing", [])}
           r.relayed = [k for k in (r.relayed or []) if k not in gone] if gone else []
           r.state = State.TRANSFERRING
         return True
