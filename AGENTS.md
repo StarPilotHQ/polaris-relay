@@ -111,7 +111,9 @@ what the code or README already says plainly.
 ## Traps
 
 - Releases are out, so existing databases must keep working: a new column goes in `ADDED_COLUMNS` with a DDL default, and
-  a column taken off a model goes in `REMOVED_COLUMNS` (left in place, its `NOT NULL` fails every insert).
+  a column taken off a model goes in `REMOVED_COLUMNS` (left in place, its `NOT NULL` fails every insert). A fix for data
+  a released bug left behind goes in `db.REPAIRS`, which runs once per database when it opens: backoff and regressions are
+  stored, so an update alone doesn't retry a drive, and a retry can use its last regression and fail it for good.
 - SQLAlchemy's identity map holds objects weakly: a test of a re-read must keep a reference to the object (the
   pipeline does), or the session reloads it anyway and the test passes without the re-read.
 - The worker only hears the site's headers on calls it makes; a test of something learned from a response must make

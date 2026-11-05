@@ -176,6 +176,62 @@ def test_a_file_kind_the_site_refuses_isnt_counted_as_sent(log_schema, clock, ma
   assert route(w).state == State.FAILED and not site.submits and not route(w).relayed
 
 
+def installed_before_the_file_names_fix(w, **fields):
+  with w.sessionmaker() as s:
+    s.delete(s.get(db.Setting, "repair:relayed_file_names"))
+    r = s.get(Route, ROUTE)
+    for name, value in fields.items():
+      setattr(r, name, value)
+    s.commit()
+
+
+def test_updating_sends_the_files_of_a_drive_stuck_by_the_old_names(log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, drive(log_schema, n=2)), FakeSite()
+  w = make_worker(comma, site)
+  onboard(w, submit_delay_min=30)
+  for _ in range(20):
+    w.tick()
+    clock.advance(minutes=6)
+    if route(w).state == State.READY:
+      break
+  sent = list(site.files)
+  assert route(w).state == State.READY and sent
+  site.files.clear()
+  installed_before_the_file_names_fix(w, state=State.TRANSFERRING, regressions=4,
+                                      next_attempt_at=clock() + timedelta(hours=1))
+  w2 = make_worker(comma, site)
+  assert route(w2).regressions == 0 and route(w2).next_attempt_at is None and not route(w2).relayed
+  w2.tick()
+  assert set(site.files) == set(sent) and all(n == 1 for n in site.files.values())
+
+
+def test_updating_starts_over_a_drive_failed_by_the_old_names_once(log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, drive(log_schema, n=2)), FakeSite()
+  w = make_worker(comma, site)
+  onboard(w, submit_delay_min=30)
+  for _ in range(20):
+    w.tick()
+    clock.advance(minutes=6)
+    if route(w).state == State.READY:
+      break
+  site.files.clear()
+  failed = {"state": State.FAILED, "regressions": 5, "finished_at": clock(),
+            "note": "The site kept finding files missing, so this drive was given up."}
+  installed_before_the_file_names_fix(w, **failed)
+  w2 = make_worker(comma, site)
+  assert route(w2).state == State.SUGGESTING and route(w2).finished_at is None and route(w2).handle is None
+  with w2.sessionmaker() as s:
+    db.put(s, "submit_delay_min", 0)
+    s.commit()
+  run_until_settled(w2, clock)
+  assert route(w2).state == State.SUBMITTED and len(site.submits) == 1 and site.files
+  with w2.sessionmaker() as s:
+    r = s.get(Route, ROUTE)
+    r.state, r.note = failed["state"], failed["note"]
+    s.commit()
+  assert route(make_worker(comma, site)).state == State.FAILED
+
+
 def test_files_missing_loop_backs_off_and_ends(log_schema, clock, make_worker):
   comma, site = FakeComma(clock, drive(log_schema, n=2)), FakeSite()
   site.fail = {r"POST /routes/h1/submit": [(409, {"error": "files_missing", "missing": []})] * 50}

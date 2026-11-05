@@ -143,6 +143,20 @@ class Route(Base):
 
 ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = ()
 REMOVED_COLUMNS: tuple[tuple[str, str], ...] = (("devices", "is_owner"),)
+# Run once per database, by name. 0.1.0 to 0.1.2 sent files under names the site refuses and counted them as sent, so no
+# relayed file ever arrived: open drives send them again, and drives failed by that are started over (a failure deletes
+# them on the site). Their backoff and regressions came from the bug, so both start clean.
+REPAIRS: dict[str, tuple[str, ...]] = {
+  "relayed_file_names": (
+    "UPDATE routes SET state = 'transferring', relayed = '[]', regressions = 0, attempts = 0, next_attempt_at = NULL, "
+    "note = '', error = '' WHERE transfer = 'relay' AND submission_id IS NULL "
+    "AND state IN ('transferring', 'ready', 'submitting')",
+    "UPDATE routes SET state = 'suggesting', finished_at = NULL, handle = NULL, relayed = '[]', ready_at = NULL, "
+    "idempotency_key = NULL, regressions = 0, attempts = 0, next_attempt_at = NULL, note = '', error = '' "
+    "WHERE transfer = 'relay' AND submission_id IS NULL AND state = 'failed' "
+    "AND note LIKE 'The site kept finding files missing%'",
+  ),
+}
 
 
 def make_sessionmaker(data_dir: Path):
@@ -162,6 +176,12 @@ def make_sessionmaker(data_dir: Path):
     for table, column in REMOVED_COLUMNS:
       if column in {c["name"] for c in inspect(conn).get_columns(table)}:
         conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column}"))
+    for name, statements in REPAIRS.items():
+      key = {"key": f"repair:{name}"}
+      if conn.execute(text("SELECT 1 FROM settings WHERE key = :key"), key).first() is None:
+        for statement in statements:
+          conn.execute(text(statement))
+        conn.execute(text("INSERT INTO settings (key, value) VALUES (:key, 'true')"), key)
   for p in (path, path.with_name(path.name + "-wal"), path.with_name(path.name + "-shm")):
     if p.exists():
       p.chmod(0o600)
