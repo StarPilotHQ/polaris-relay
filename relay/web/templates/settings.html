@@ -108,6 +108,8 @@
         <input class="gx-field rl-num" name="surround" type="number" min="0" max="5" value="{{ surround }}"></label>
       <p class="gx-note">0 keeps only the segments that touch a zone. 1 also covers the approach and the departure.</p>
     </div>
+    <label class="rl-check"><input type="checkbox" name="upload_cellular" value="1" {{ "checked" if upload_cellular }}> Let
+      the device upload requested files over cellular too (uses its data plan; otherwise it waits for Wi-Fi)</label>
     <label class="rl-check"><input type="checkbox" name="update_check" value="1" {{ "checked" if update_check }}> Check for new versions
       once a day (asks GitHub's container registry for the latest version number)</label>
     <div><button class="gx-btn gx-btn--small">Save</button></div>

@@ -1,6 +1,7 @@
 import html
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from relay import db
@@ -110,3 +111,15 @@ def test_switching_service_disables_devices(tmp_path, clock):
   with sm() as s:
     assert db.get(s, "cloud") == "konik" and not s.get(Device, DONGLE).enabled
   assert used == ["comma", "konik"]
+
+
+@pytest.mark.parametrize("allowed", [False, True])
+def test_cellular_uploads_follow_the_setting(allowed, log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, plain_drive(log_schema), procqlog=False), FakeSite(konik=True)
+  w = make_worker(comma, site)
+  onboard(w, cloud="konik")
+  with w.sessionmaker() as s:
+    db.put(s, "upload_cellular", allowed)
+    s.commit()
+  run_until_settled(w, clock)
+  assert comma.cellular and set(comma.cellular) == {allowed}

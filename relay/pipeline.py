@@ -917,7 +917,7 @@ class Worker:
         wanted += 1
         asked[(seg, kind)] = [f"{name}--{seg}/{f}" for f in KIND_FILES[kind]]
         paths += asked[(seg, kind)]
-    result = comma.request_uploads(r.dongle_id, paths) if paths else {}
+    result = comma.request_uploads(r.dongle_id, paths, cellular=bool(db.get(s, "upload_cellular"))) if paths else {}
     failed = set(result.get("failed") or []) if isinstance(result.get("failed"), list) else set()
     # A kind is gone from the device when every file name it could have was refused (it has rlog.zst or rlog.bz2).
     gone = [f"{seg}/{kind}" for (seg, kind), candidates in asked.items() if set(candidates) <= failed]

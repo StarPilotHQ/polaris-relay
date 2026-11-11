@@ -279,7 +279,7 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   # ----- setup and settings -----
 
   def settings_ctx(s: Session) -> dict:
-    keys = ("transfer", "surround", "tile_url", "update_check", "digest", "ping_after_end_min", "quiet_min",
+    keys = ("transfer", "surround", "tile_url", "update_check", "upload_cellular", "digest", "ping_after_end_min", "quiet_min",
             "settle_min", "files_wait_days", "public_cap_h", "auto_withdraw", "submit_delay_min")
     return {"devices": s.scalars(select(Device).order_by(Device.alias)).all(),
             "zone_count": len(s.scalars(select(Zone.id)).all()),
@@ -469,7 +469,8 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
 
   @app.post("/settings/general")
   def settings_general(request: Request, transfer: str = Form("relay"), surround: str = Form("0"),
-                       update_check: str = Form(""), _=Depends(require_user), __=Depends(check_csrf),
+                       update_check: str = Form(""), upload_cellular: str = Form(""), _=Depends(require_user),
+                       __=Depends(check_csrf),
                        s: Session = Depends(get_db)):
     public_ok = cloud(db.get(s, "cloud")).public
     db.put(s, "transfer", transfer if transfer in ("relay", "public") and public_ok else "relay")
@@ -477,6 +478,7 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
       db.put(s, "surround", int(_num(surround, 0, 5, 0)))
       filter_changed(s)
     db.put(s, "update_check", bool(update_check))
+    db.put(s, "upload_cellular", bool(upload_cellular))
     s.commit()
     flash(request, "Saved.")
     return back(settings_url(s))

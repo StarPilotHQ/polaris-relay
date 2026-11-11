@@ -209,9 +209,10 @@ class CommaClient:
     if isinstance(data, dict) and data.get("is_public") not in (None, public):
       raise CommaError("comma didn't change the route's sharing")
 
-  def request_uploads(self, dongle_id: str, paths: list[str], expiry_days: int = 7) -> dict:
+  def request_uploads(self, dongle_id: str, paths: list[str], expiry_days: int = 7, cellular: bool = False) -> dict:
     """Ask the device to upload these files, as Connect's upload button does. Returns athena's result, or
-    `{"queued": True}` when the device is offline and the request waits for it."""
+    `{"queued": True}` when the device is offline and the request waits for it. With `cellular`, the device uploads
+    over LTE too (its data plan pays); otherwise it waits for Wi-Fi."""
     if not paths:
       return {"enqueued": 0}
     if any(p.rsplit("/", 1)[-1].startswith("dcamera") for p in paths):
@@ -221,7 +222,7 @@ class CommaClient:
     if not isinstance(urls, list) or len(urls) != len(paths) or \
         not all(isinstance(u, dict) and isinstance(u.get("url"), str) for u in urls):
       raise CommaError("comma sent unreadable upload links")
-    files = [{"fn": p, "url": u["url"], "headers": u.get("headers") or {}, "allow_cellular": False, "priority": 1}
+    files = [{"fn": p, "url": u["url"], "headers": u.get("headers") or {}, "allow_cellular": cellular, "priority": 1}
              for p, u in zip(paths, urls)]
     body = {"id": 0, "jsonrpc": "2.0", "method": "uploadFilesToUrls", "params": {"files_data": files},
             "expiry": int(time.time()) + expiry_days * 86400}

@@ -87,6 +87,7 @@ class FakeComma:
   uploaded: set = field(default_factory=set)  # (seg, kind) the device has uploaded
   requests: list = field(default_factory=list)
   upload_paths: list = field(default_factory=list)
+  cellular: list = field(default_factory=list)
   public_changes: list = field(default_factory=list)
   devices_payload: list | None = None
   owner: bool = True
@@ -147,6 +148,7 @@ class FakeComma:
           for i, fn in enumerate(self.queue)]})
       for item in body["params"]["files_data"]:
         self.upload_paths.append(item["fn"])
+        self.cellular.append(item["allow_cellular"])
       if not self.online:
         return httpx.Response(200, json={"id": 0, "jsonrpc": "2.0", "result": "Device offline, message queued"})
       kinds = {"fcamera.hevc": "cameras", "ecamera.hevc": "ecameras", "rlog.zst": "logs", "qcamera.ts": "qcameras"}

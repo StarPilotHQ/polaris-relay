@@ -194,6 +194,7 @@ DEFAULTS = {
   "surround": 0,
   "tile_url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
   "update_check": True,
+  "upload_cellular": False,  # let the device upload requested files over LTE, not only Wi-Fi
   "filter_generation": 0,
   "digest": False,
   # Advanced: qlog completeness (minutes) and the public-route safety net.

@@ -76,6 +76,11 @@ Devices on Konik Stable work the same way, with a few differences. The site revi
 the steps on its Submit page, and ask an operator to allow your account through the API too, or the site refuses
 the drives. Konik drives always relay through this machine, since the site copies public routes only from comma.
 
+### Uploads over cellular
+
+The device uploads the files a drive needs over Wi-Fi only, by default. To let it use cellular too (its data plan
+pays for it), tick **Let the device upload requested files over cellular too** under General settings.
+
 ### Before a drive is submitted
 
 Once its files are in place, a drive waits as **Ready to submit** with a countdown: 30 minutes by default, set under
