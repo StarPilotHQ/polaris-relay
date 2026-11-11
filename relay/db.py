@@ -163,6 +163,10 @@ REPAIRS: dict[str, tuple[str, ...]] = {
     "WHERE transfer = 'relay' AND submission_id IS NULL AND state = 'failed' "
     "AND note LIKE 'The site kept finding files missing%'",
   ),
+  # Devices and drives from before `cloud` existed were all listed by the service then in use, not always comma.
+  "cloud_from_setting": tuple(
+    f"UPDATE {table} SET cloud = 'konik' WHERE EXISTS (SELECT 1 FROM settings WHERE key = 'cloud' AND value = '\"konik\"')"
+    for table in ("devices", "routes")),
 }
 
 

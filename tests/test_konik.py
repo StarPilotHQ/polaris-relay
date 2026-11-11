@@ -261,6 +261,23 @@ def test_an_existing_database_gets_the_service_columns(tmp_path):
     assert s.get(Device, "d").cloud == "comma"
 
 
+def test_an_existing_konik_database_keeps_its_devices_and_drives_on_konik(tmp_path, clock):
+  import sqlite3
+  with make_sessionmaker(tmp_path)() as s:
+    db.put(s, "cloud", "konik")
+    s.add(Device(dongle_id="d", enabled=True))
+    s.add(Route(fullname="d|0000002a--0000000001", dongle_id="d", state=State.WAITING_FILES, start_time=clock()))
+    s.commit()
+  conn = sqlite3.connect(tmp_path / "relay.db")
+  for table in ("devices", "routes"):
+    conn.execute(f"ALTER TABLE {table} DROP COLUMN cloud")
+  conn.execute("DELETE FROM settings WHERE key = 'repair:cloud_from_setting'")
+  conn.commit()
+  conn.close()
+  with make_sessionmaker(tmp_path)() as s:
+    d, r = s.get(Device, "d"), s.get(Route, "d|0000002a--0000000001")
+    assert d.cloud == "konik" and d.enabled and r.cloud == "konik" and r.state == State.WAITING_FILES
+
 def test_a_refusal_of_the_token_replaced_meanwhile_pauses_nothing(log_schema, clock, make_worker):
   comma, site = FakeComma(clock, plain_drive(log_schema), procqlog=False), FakeSite(konik=True)
   w = make_worker(comma, site)
