@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from relay import __version__, db, notify, privacy, updates
 from relay.comma import (KIND_FILES, NEVER_KINDS, CommaAuthError, CommaClient, CommaError, CommaNotFound, LinkExpired,
-                         read_only, token_expiry)
+                         cloud, read_only, token_expiry)
 from relay.config import Config
 from relay.db import Device, Route, Zone, now_utc
 from relay.qlogs import read_scans
@@ -73,6 +73,10 @@ TERMINAL = {
 # Site errors about the whole account: everything stops until the user acts on the site.
 ACCOUNT = {
   "account_banned": "The site says your account can't submit. Nothing is sent until that changes.",
+  "konik_not_allowed": "The site hasn't allowed your account to submit Konik Stable drives yet. Follow the steps on "
+                       "the site's Submit page, then save your access token again here.",
+  "konik_api_not_allowed": "The site hasn't allowed your account to submit Konik Stable drives through the API yet. "
+                           "Ask an operator to allow it, then save your access token again here.",
   "credit_choice_needed": "Choose how you'd like to be credited on the site (your Profile page), then save your access "
                           "token again here.",
 }
@@ -132,7 +136,8 @@ class Worker:
   def __init__(self, config: Config, sessionmaker, comma_factory=None, site_factory=None):
     self.config = config
     self.sessionmaker = sessionmaker
-    self.comma_factory = comma_factory or (lambda token: CommaClient(token, config.comma_api, config.athena_api))
+    self.comma_factory = comma_factory or (
+      lambda token, cloud="comma": CommaClient(token, *config.endpoints(cloud), cloud=cloud))
     self.site_factory = site_factory or (lambda token: SiteClient(config.polaris_host, token))
     self.lock = threading.Lock()
     # Held for every change to whether a route is public, by the worker and the safety net's thread alike, so
@@ -179,16 +184,16 @@ class Worker:
 
   def run_safety_net(self) -> None:
     with self.sessionmaker() as s:
-      token = db.get(s, "comma_token")
+      token, service = db.get_many(s, "comma_token", "cloud")  # one read: a switch saves both together
       public = s.scalar(select(Route.fullname).where(Route.public_since.is_not(None)).limit(1))
       if token and public and not db.get(s, "pause:comma"):
         can_advance = bool(db.get(s, "onboarded_at")) and not db.get(s, "pause:site")
-        comma = self.comma_factory(token)
+        comma = self.comma_factory(token, service)
         try:
           self.safety_net(s, comma, can_advance)
         except CommaAuthError:
           s.rollback()
-          self.comma_refused(s)
+          self.comma_refused(s, token)
         finally:
           comma.close()
     self.last_net = time.monotonic()
@@ -203,11 +208,11 @@ class Worker:
       if not db.get(s, "onboarded_at"):
         return
       self.check_updates(s)
-      comma_token, access_token = db.get(s, "comma_token"), db.get(s, "access_token")
+      comma_token, service, access_token = db.get_many(s, "comma_token", "cloud", "access_token")
       if not comma_token or not access_token or db.get(s, "pause:comma"):
         return
       self.warn_token_expiry(s, comma_token)
-      comma, site = self.comma_factory(comma_token), self.site_factory(access_token)
+      comma, site = self.comma_factory(comma_token, service), self.site_factory(access_token)
       try:
         if db.get(s, "pause:site"):
           return
@@ -217,7 +222,7 @@ class Worker:
         for r in due:
           self.beat()
           d = s.get(Device, r.dongle_id)
-          usable = d is not None and d.enabled and not d.paused_reason
+          usable = d is not None and d.enabled and not d.paused_reason and d.cloud == comma.cloud.name
           if not usable and r.state == State.PUBLIC:
             if not (r.next_attempt_at and r.next_attempt_at > now_utc()):
               self.stop_orphaned_copy(s, comma, site, r)
@@ -225,12 +230,18 @@ class Worker:
           if not usable and r.state != State.SITE_COPYING:  # that one only asks the site; the device doesn't matter
             self.expire_if_old(s, site, r)  # a device that's off, paused or gone still mustn't keep a route forever
             continue
+          if r.cloud != comma.cloud.name and r.state == State.PUBLIC:
+            self.stop_orphaned_copy(s, comma, site, r, "You switched services while the site was copying")
+            continue
+          if r.cloud != comma.cloud.name and r.state != State.SITE_COPYING:
+            self.end_foreign(s, site, r)
+            continue
           if r.next_attempt_at and r.next_attempt_at > now_utc():
             continue
           self.advance(s, comma, site, r, d, newest.get(r.dongle_id))
       except CommaAuthError:
         s.rollback()
-        self.comma_refused(s)
+        self.comma_refused(s, comma_token)
       except TokenRejected:
         s.rollback()
         self.pause_site(s, "The site refused your access token. Create a new one under Profile → Access tokens and paste it "
@@ -245,14 +256,18 @@ class Worker:
 
   # ----- global conditions -----
 
-  def comma_refused(self, s: Session) -> None:
-    db.put(s, "pause:comma", "comma refused your token. Paste a new one from jwt.comma.ai in Setup.")
+  def comma_refused(self, s: Session, token: str) -> None:
+    stored, service = db.get_many(s, "comma_token", "cloud")
+    if stored != token:  # a new token (maybe for the other service) was saved while this pass used the old one
+      return
+    c = cloud(service)
+    db.put(s, "pause:comma", f"{c.label} refused your token. Paste a new one from {c.token_from} in Setup.")
     s.commit()
     public = len(s.scalars(select(Route.fullname).where(Route.public_since.is_not(None))).all())
-    body = "comma refused your token. Paste a new one in Setup."
+    body = f"{c.label} refused your token. Paste a new one in Setup."
     if public:  # without a token they can't be made private from here
       body += f" {public} drive{'s' if public != 1 else ''} may still be public: make {'them' if public != 1 else 'it'} " \
-              "private in comma connect."
+              f"private in {c.connect}."
     notify.event(s, "comma_token", "Polaris Relay paused", body)
 
   def pause_site(self, s: Session, message: str) -> None:
@@ -306,9 +321,10 @@ class Worker:
     exp = token_expiry(token)
     if exp and exp - now_utc() < TOKEN_WARN:
       left = max(0, (exp - now_utc()).days)
-      notify.event(s, "comma_token_expiring", "comma token expiring",
-                   f"Your comma token expires in {left} day{'s' if left != 1 else ''}. Paste a new one from "
-                   "jwt.comma.ai in Setup.")
+      c = cloud(db.get(s, "cloud"))
+      notify.event(s, "comma_token_expiring", f"{c.label} token expiring",
+                   f"Your {c.label} token expires in {left} day{'s' if left != 1 else ''}. Paste a new one from "
+                   f"{c.token_from} in Setup.")
 
   # ----- public routes -----
 
@@ -339,7 +355,7 @@ class Worker:
           if d is not None:
             s.refresh(d)
           copying = can_advance and r.state in (State.SUBMITTING, State.PUBLIC) and d is not None and d.enabled \
-            and not d.paused_reason and r.filter_gen == self.generation()
+            and not d.paused_reason and r.filter_gen == self.generation() and r.cloud == comma.cloud.name
           if self.public_elapsed(r) > cap:
             r.cap_hit = True
           if r.cap_hit or not copying:
@@ -351,13 +367,16 @@ class Worker:
         log.warning("couldn't make a route private again (%s)", "comma didn't answer" if getattr(e, "transient", False)
                     else type(e).__name__)
         try:
+          where = cloud(s.scalar(select(Route.cloud).where(Route.fullname == fullname))).connect
           notify.event(s, "make_private_failed", "Polaris Relay: a drive may still be public",
-                       "A drive couldn't be made private again; it's retried every minute. Check it in comma connect.")
+                       f"A drive couldn't be made private again; it's retried every minute. Check it in {where}.")
         except Exception:
           s.rollback()
 
   def make_private(self, s: Session, comma: CommaClient, r: Route) -> None:
     with self.public_lock:
+      if r.cloud != comma.cloud.name:  # another service's "not found" would read as private and end the retries
+        raise CommaError(f"the route is on {cloud(r.cloud).connect}")
       try:
         comma.set_public(r.fullname, False)
       except CommaNotFound:
@@ -369,6 +388,8 @@ class Worker:
 
   def make_public(self, s: Session, comma: CommaClient, r: Route) -> None:
     with self.public_lock:
+      if r.cloud != comma.cloud.name or not comma.cloud.public:
+        raise CommaError("the site can't copy this route from a public link")
       s.commit()
       s.refresh(r)  # the safety net's thread may have capped it since this session read it
       d = s.get(Device, r.dongle_id)
@@ -376,6 +397,8 @@ class Worker:
         s.refresh(d)
       if d is None or not d.enabled or d.paused_reason:  # turned off since the pass began: the safety net would undo it
         raise Waiting("The device was turned off or paused, so the route isn't made public.")
+      if d.cloud != r.cloud or db.get_many(s, "cloud")[0] != r.cloud:  # switched since the pass began
+        raise Waiting("You switched services, so the route isn't made public.")
       first = r.first_public_at
       if r.cap_hit or self.public_elapsed(r) >= self.cap_s(s) or \
           (first and now_utc() - first > timedelta(days=PUBLIC_MAX_DAYS)):
@@ -391,8 +414,10 @@ class Worker:
     calls happen before any write, so the database isn't locked across them."""
     onboarded = datetime.fromtimestamp(db.get(s, "onboarded_at"), now_utc().tzinfo)
     now = now_utc()
+    here = comma.cloud.name
     watch = {d.dongle_id: max(onboarded, d.enabled_at or onboarded, now - timedelta(days=DISCOVER_DAYS))
-             for d in s.scalars(select(Device).where(Device.enabled.is_(True), Device.paused_reason.is_(None)))}
+             for d in s.scalars(select(Device).where(Device.enabled.is_(True), Device.paused_reason.is_(None),
+                                                     Device.cloud == here))}
     s.commit()
     devices = comma.devices()
     found = {}
@@ -404,7 +429,7 @@ class Worker:
       except CommaError as e:  # one device's trouble mustn't stop the others
         log.warning("couldn't list a device's routes (%s)", "comma didn't answer" if e.transient else type(e).__name__)
     for dev in devices:
-      if (d := s.get(Device, dev.get("dongle_id", ""))) is None:
+      if (d := s.get(Device, dev.get("dongle_id", ""))) is None or d.cloud != here:
         continue
       if read_only(dev):
         found.pop(d.dongle_id, None)
@@ -422,9 +447,10 @@ class Worker:
           continue
         r = s.get(Route, m.fullname)
         if r is None:
-          r = Route(fullname=m.fullname, dongle_id=dongle, state=State.WAITING_QLOGS, maxqlog_changed_at=now)
+          r = Route(fullname=m.fullname, dongle_id=dongle, cloud=here, state=State.WAITING_QLOGS,
+                    maxqlog_changed_at=now)
           s.add(r)
-        if r.state != State.WAITING_QLOGS:
+        if r.state != State.WAITING_QLOGS or r.cloud != here:
           continue
         if m.maxqlog != r.maxqlog:
           r.maxqlog_changed_at = now
@@ -513,8 +539,8 @@ class Worker:
       elif getattr(e, "deadline", False) and self.too_slow(r, getattr(e, "file", "")):
         return self.failed_attempt(s, r, describe(e), site)
       elif isinstance(e, (SiteError, CommaError, ConnectionError, TimeoutError)) and self.transient(e):
-        return self.outage(s, r, "comma" if isinstance(e, CommaError) else "the site" if isinstance(e, SiteError)
-                           else "the network")
+        return self.outage(s, r, comma.cloud.label if isinstance(e, CommaError) else "the site"
+                           if isinstance(e, SiteError) else "the network")
       elif isinstance(e, SiteError) and e.code in ACCOUNT:
         raise AccountPaused(ACCOUNT[e.code]) from None
       elif isinstance(e, SiteError) and e.code == "route_expired":
@@ -531,7 +557,7 @@ class Worker:
     except Exception as again:
       s.rollback()
       if isinstance(again, (SiteError, CommaError, ConnectionError, TimeoutError)) and self.transient(again):
-        self.outage(s, r, "the site" if isinstance(again, SiteError) else "comma")
+        self.outage(s, r, "the site" if isinstance(again, SiteError) else comma.cloud.label)
       else:
         self.failed_attempt(s, r, describe(again))
 
@@ -553,16 +579,28 @@ class Worker:
     r.note = f"Waiting for {who} to answer."
     s.commit()
 
-  def stop_orphaned_copy(self, s: Session, comma: CommaClient, site: SiteClient, r: Route) -> None:
-    """A public copy whose device was turned off, paused or removed: the safety net has made the route private, so
-    the copy can't finish. End it now (withdrawing per the setting) rather than leave it open."""
+  def stop_orphaned_copy(self, s: Session, comma: CommaClient, site: SiteClient, r: Route,
+                         why: str = "The device was turned off or paused while the site was copying, so the route was "
+                                    "made private again") -> None:
+    """A public copy whose device was turned off, paused or removed, or that's on the service used before a switch:
+    the safety net has made the route private, so the copy can't finish. End it now (withdrawing per the setting)
+    rather than leave it open."""
     try:
-      self.end_public(s, comma, site, r, "The device was turned off or paused while the site was copying, so the route "
-                                         "was made private again")
+      self.end_public(s, comma, site, r, why)
     except (CommaAuthError, TokenRejected, AccountPaused):
       raise
     except Exception as e:
       self.route_error(s, comma, site, r, None, e)
+
+  def end_foreign(self, s: Session, site: SiteClient, r: Route) -> None:
+    """A drive found on the service used before a switch, whose device is enabled again on the new one: this pass's
+    client can't reach its files. Ended rather than moved on with the wrong service; nothing it may have submitted is
+    deleted."""
+    note = "You switched services before this drive was done."
+    if self.skippable(r):
+      self.finish(s, r, State.SKIPPED, note, site)
+    else:
+      self.finish(s, r, State.FAILED, note)
 
   def expire_if_old(self, s: Session, site: SiteClient, r: Route) -> bool:
     if r.start_time and now_utc() - r.start_time > ROUTE_MAX_AGE and r.state not in (State.PUBLIC, State.SITE_COPYING):
@@ -765,7 +803,8 @@ class Worker:
     ping_after = timedelta(minutes=float(db.get(s, "ping_after_end_min")))
     conds = {
       "pinged": bool(r.end_time) and d.last_athena_ping >= (r.end_time + ping_after).timestamp(),
-      "quiet": r.maxqlog >= 0 and r.procqlog == r.maxqlog and r.maxqlog_changed_at is not None
+      "quiet": r.maxqlog >= 0 and (r.procqlog == r.maxqlog or not comma.cloud.procqlog)
+               and r.maxqlog_changed_at is not None
                and now - r.maxqlog_changed_at >= timedelta(minutes=float(db.get(s, "quiet_min"))),
       "settled": (newest is not None and r.start_time is not None and newest > r.start_time)
                  or (bool(r.end_time) and now - r.end_time >= timedelta(minutes=float(db.get(s, "settle_min")))),
@@ -833,7 +872,7 @@ class Worker:
     if not files:
       self.finish(s, r, State.SKIPPED, "Every segment was in or near a privacy zone.", site)
       return False
-    created = site.create_route(r.fullname)
+    created = site.create_route(r.fullname, comma.cloud.site_route)
     r.handle, r.submittable, r.link = created["id"], bool(created.get("submittable")), created.get("link") or r.link
     d.verified_at = now_utc()
     s.commit()
@@ -910,7 +949,7 @@ class Worker:
         wanted += 1
         asked[(seg, kind)] = [f"{name}--{seg}/{f}" for f in KIND_FILES[kind]]
         paths += asked[(seg, kind)]
-    result = comma.request_uploads(r.dongle_id, paths) if paths else {}
+    result = comma.request_uploads(r.dongle_id, paths, cellular=bool(db.get(s, "upload_cellular"))) if paths else {}
     failed = set(result.get("failed") or []) if isinstance(result.get("failed"), list) else set()
     # A kind is gone from the device when every file name it could have was refused (it has rlog.zst or rlog.bz2).
     gone = [f"{seg}/{kind}" for (seg, kind), candidates in asked.items() if set(candidates) <= failed]
@@ -998,7 +1037,8 @@ class Worker:
       n = r.suggestions
       self.finish(s, r, State.SUGGESTED, "", site)
       return False
-    r.transfer = db.get(s, "transfer")
+    # The site copies public routes only from comma: other services always relay, whatever the setting says.
+    r.transfer = db.get(s, "transfer") if comma.cloud.public else "relay"
     if r.transfer == "relay":
       r.state = State.TRANSFERRING
       return True

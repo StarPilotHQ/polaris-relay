@@ -432,7 +432,8 @@ def client_for(tmp_path, clock, **env) -> tuple[TestClient, object, FakeSite]:
                             "ALLOWED_HOSTS": "testserver", **env})
   sm = make_sessionmaker(config.data_dir)
   app = create_app(config, sm,
-                   comma_factory=lambda t: CommaClient(t, "https://comma.test", transport=httpx.MockTransport(comma.handler)),
+                   comma_factory=lambda t, cloud="comma": CommaClient(t, "https://comma.test", cloud=cloud,
+                                                                      transport=httpx.MockTransport(comma.handler)),
                    site_factory=lambda t: SiteClient("https://site.test", t, transport=httpx.MockTransport(site.handler)))
   return TestClient(app), sm, site
 

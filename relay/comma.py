@@ -26,6 +26,34 @@ ROUTE_PAGES = 20
 log = logging.getLogger("relay")
 
 
+@dataclass(frozen=True)
+class Cloud:
+  """A service with comma's API that devices upload to (its endpoints are in `Config.endpoints`). `procqlog`: whether
+  its route list reports processed qlogs. `site_route` prefixes `<dongle>|<route>` when opening a route on the site.
+  `public`: whether the site can copy its public routes."""
+  name: str
+  label: str
+  connect: str
+  token_from: str
+  procqlog: bool
+  site_route: str
+  public: bool
+
+
+CLOUDS = {
+  "comma": Cloud("comma", "comma", "comma connect", "jwt.comma.ai", True, "", True),
+  # Konik Stable runs comma's API on its own host. Its athena answers JSON-RPC at api.konik.ai/ws (athena.konik.ai
+  # turns away plain HTTP clients), and its route list leaves procqlog at -1. The site copies public routes only from
+  # comma, so Konik drives always go through this machine.
+  "konik": Cloud("konik", "Konik", "Konik Stable", "the Konik sign-in on your computer (~/.comma/auth.json after "
+                 "tools/lib/auth.py)", False, "konik:", False),
+}
+
+
+def cloud(name: str | None) -> Cloud:
+  return CLOUDS.get(name or "", CLOUDS["comma"])
+
+
 def read_only(device: dict) -> bool:
   return device.get("is_owner") is False
 
@@ -117,7 +145,8 @@ def files_by_segment(files: dict) -> dict[str, dict[int, tuple[str, str]]]:
 
 class CommaClient:
   def __init__(self, token: str, api: str = "https://api.commadotai.com", athena: str = "https://athena.comma.ai",
-               transport: httpx.BaseTransport | None = None, timeout: float = 30.0):
+               transport: httpx.BaseTransport | None = None, timeout: float = 30.0, cloud: str = "comma"):
+    self.cloud = CLOUDS[cloud]
     headers = {"Authorization": f"JWT {token}"}
     self.http = httpx.Client(base_url=api, headers=headers, transport=transport, timeout=timeout)
     self.athena = httpx.Client(base_url=athena, headers=headers, transport=transport, timeout=timeout)
@@ -178,9 +207,10 @@ class CommaClient:
     if isinstance(data, dict) and data.get("is_public") not in (None, public):
       raise CommaError("comma didn't change the route's sharing")
 
-  def request_uploads(self, dongle_id: str, paths: list[str], expiry_days: int = 7) -> dict:
+  def request_uploads(self, dongle_id: str, paths: list[str], expiry_days: int = 7, cellular: bool = False) -> dict:
     """Ask the device to upload these files, as Connect's upload button does. Returns athena's result, or
-    `{"queued": True}` when the device is offline and the request waits for it."""
+    `{"queued": True}` when the device is offline and the request waits for it. With `cellular`, the device uploads
+    over LTE too (its data plan pays); otherwise it waits for Wi-Fi."""
     if not paths:
       return {"enqueued": 0}
     if any(p.rsplit("/", 1)[-1].startswith("dcamera") for p in paths):
@@ -190,7 +220,7 @@ class CommaClient:
     if not isinstance(urls, list) or len(urls) != len(paths) or \
         not all(isinstance(u, dict) and isinstance(u.get("url"), str) for u in urls):
       raise CommaError("comma sent unreadable upload links")
-    files = [{"fn": p, "url": u["url"], "headers": u.get("headers") or {}, "allow_cellular": False, "priority": 1}
+    files = [{"fn": p, "url": u["url"], "headers": u.get("headers") or {}, "allow_cellular": cellular, "priority": 1}
              for p, u in zip(paths, urls)]
     body = {"id": 0, "jsonrpc": "2.0", "method": "uploadFilesToUrls", "params": {"files_data": files},
             "expiry": int(time.time()) + expiry_days * 86400}

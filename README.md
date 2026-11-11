@@ -47,8 +47,9 @@ docker compose up -d
 
 Open http://localhost:8080, sign in and follow Setup:
 
-1. Paste a comma token from [jwt.comma.ai](https://jwt.comma.ai). The page shows when it expires and warns you a week
-   before.
+1. Choose comma or Konik Stable and paste a token: for comma from [jwt.comma.ai](https://jwt.comma.ai), for Konik
+   the one the Konik sign-in saves on your computer (`~/.comma/auth.json` after `tools/lib/auth.py`). The page shows
+   when it expires and warns you a week before.
 2. Paste your access token from the site.
 3. Enable your devices, and choose per device: submit automatically or only suggest, and whether to record drives.
    Devices shared with you aren't listed. Only drives that start after you enable a device are picked up. With
@@ -68,6 +69,19 @@ Open http://localhost:8080, sign in and follow Setup:
   whole route, privacy-zone segments included. It's made private again as soon as the copy finishes, and after 6
   hours at most (Advanced settings), unless Polaris Relay is stopped mid-step; it makes it private when it starts
   again.
+
+### Konik Stable
+
+Devices on Konik Stable work the same way, with a few differences. The site reviews Konik devices by hand: follow
+the steps on its Submit page, and ask an operator to allow your account through the API too, or the site refuses
+the drives. Konik drives always relay through this machine, since the site copies public routes only from comma.
+
+### Uploads over cellular
+
+By default the device uploads the files a drive needs over Wi-Fi, unless StarPilot's **Always Allow Uploads** is on
+(Toggles → Device & Data → Data Uploads). To let it use cellular either way (its data plan pays for it), tick **Let the
+device upload requested files over cellular too** under **5. How files reach the site**. Files the device was already
+asked for keep the earlier choice.
 
 ### Before a drive is submitted
 

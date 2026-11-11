@@ -87,6 +87,7 @@ class FakeComma:
   uploaded: set = field(default_factory=set)  # (seg, kind) the device has uploaded
   requests: list = field(default_factory=list)
   upload_paths: list = field(default_factory=list)
+  cellular: list = field(default_factory=list)
   public_changes: list = field(default_factory=list)
   devices_payload: list | None = None
   owner: bool = True
@@ -96,6 +97,7 @@ class FakeComma:
 
   extra_routes: list = field(default_factory=list)  # more route objects in the device's route list
   gone: set = field(default_factory=set)  # (seg, kind) no longer on the device: athena reports them failed
+  procqlog: bool = True  # Konik's route list leaves procqlog at -1
 
   def ping(self) -> datetime:
     return self.last_ping or (self.clock() if self.online else self.clock() - timedelta(days=1))
@@ -107,7 +109,8 @@ class FakeComma:
   def route_obj(self) -> dict:
     return {"fullname": ROUTE, "start_time_utc_millis": int(T0.timestamp() * 1000),
             "end_time_utc_millis": int((T0 + timedelta(minutes=len(self.qlogs))).timestamp() * 1000),
-            "maxqlog": self.maxqlog, "procqlog": self.maxqlog, "segment_numbers": sorted(self.qlogs),
+            "maxqlog": self.maxqlog, "procqlog": self.maxqlog if self.procqlog else -1,
+            "segment_numbers": sorted(self.qlogs),
             "start_lat": self.start_point[0] if self.start_point else 0,
             "start_lng": self.start_point[1] if self.start_point else 0,
             "end_lat": self.end_point[0] if self.end_point else 0, "end_lng": self.end_point[1] if self.end_point else 0,
@@ -146,6 +149,7 @@ class FakeComma:
           for i, fn in enumerate(self.queue)]})
       for item in body["params"]["files_data"]:
         self.upload_paths.append(item["fn"])
+        self.cellular.append(item["allow_cellular"])
       if not self.online:
         return httpx.Response(200, json={"id": 0, "jsonrpc": "2.0", "result": "Device offline, message queued"})
       kinds = {"fcamera.hevc": "cameras", "ecamera.hevc": "ecameras", "rlog.zst": "logs", "qcamera.ts": "qcameras"}
@@ -203,6 +207,8 @@ class FakeSite:
   headers: dict = field(default_factory=dict)  # added to every answer (the deprecation headers)
   hold_copy: bool = False  # a relay submission stays "submitted" (the site still copying) instead of moving on
   transfer: str = ""
+  konik: bool = False  # the device is on Konik Stable: routes come as konik:<dongle>|<route>
+  opened: list = field(default_factory=list)
 
   def handler(self, request: httpx.Request) -> httpx.Response:
     response = self.answer(request)
@@ -221,10 +227,16 @@ class FakeSite:
       return httpx.Response(200, json={"handle": "tester", "token": {"name": "relay", "scopes": ["submit",
                                                                                                  "record_drive"]}})
     if path == "/devices/check":
-      return httpx.Response(200, json={"verified": self.verified})
+      provider = json.loads(request.content).get("provider", "comma")
+      if provider not in ("comma", "konik"):
+        return httpx.Response(400, json={"error": "bad_provider", "message": "unknown provider"})
+      return httpx.Response(200, json={"verified": self.verified and (provider == "konik") == self.konik})
     if path == "/schema":
       return httpx.Response(200, content=schema_bundle(), headers={"X-Schema-Version": "test1"})
     if path == "/routes":
+      self.opened.append(json.loads(request.content)["route"])
+      if self.opened[-1] != ("konik:" if self.konik else "") + ROUTE:
+        return httpx.Response(400, json={"error": "bad_route", "message": "no such route"})
       if not self.verified:
         return httpx.Response(403, json={"error": "device_not_verified", "message": "not verified"})
       return httpx.Response(200, json={"id": "h1", "submittable": self.submittable, "link": "https://site.test/r"})
@@ -300,7 +312,8 @@ def data_dir(tmp_path):
 def config(data_dir):
   return Config.from_env({"DATA_DIR": str(data_dir), "POLARIS_HOST": "https://site.test",
                           "INSECURE_ALLOW_NO_AUTH": "1", "ALLOWED_HOSTS": "testserver",
-                          "RELAY_COMMA_API": "https://comma.test", "RELAY_ATHENA_API": "https://athena.test"})
+                          "RELAY_COMMA_API": "https://comma.test", "RELAY_ATHENA_API": "https://athena.test",
+                          "RELAY_KONIK_API": "https://comma.test", "RELAY_KONIK_ATHENA": "https://athena.test/ws"})
 
 
 @pytest.fixture
@@ -311,13 +324,15 @@ def make_worker(config):
   def make(comma: FakeComma, site: FakeSite) -> Worker:
     sm = make_sessionmaker(config.data_dir)
     return Worker(config, sm,
-                  lambda t: CommaClient(t, config.comma_api, config.athena_api, transport=httpx.MockTransport(comma.handler)),
+                  lambda t, cloud="comma": CommaClient(t, *config.endpoints(cloud), cloud=cloud,
+                                                       transport=httpx.MockTransport(comma.handler)),
                   lambda t: SiteClient(config.polaris_host, t, transport=httpx.MockTransport(site.handler)))
   return make
 
 
 def onboard(worker: Worker, *, zones=(), surround: int = 0, mode: str = "auto", transfer: str = "relay",
-            record_drives: bool = True, scopes=("submit", "record_drive"), submit_delay_min: float = 0) -> None:
+            record_drives: bool = True, scopes=("submit", "record_drive"), submit_delay_min: float = 0,
+            cloud: str = "comma") -> None:
   from relay.db import Device
   with worker.sessionmaker() as s:
     db.put(s, "comma_token", "header.eyJleHAiOiA5OTk5OTk5OTk5fQ.sig")
@@ -327,9 +342,10 @@ def onboard(worker: Worker, *, zones=(), surround: int = 0, mode: str = "auto", 
     db.put(s, "onboarded_at", (T0 - timedelta(days=1)).timestamp())
     db.put(s, "surround", surround)
     db.put(s, "transfer", transfer)
+    db.put(s, "cloud", cloud)
     db.put(s, "update_check", False)
     s.add(Device(dongle_id=DONGLE, alias="Test car", enabled=True, mode=mode, record_drives=record_drives,
-                 enabled_at=T0 - timedelta(days=1)))
+                 enabled_at=T0 - timedelta(days=1), cloud=cloud))
     for z in zones:
       s.add(z)
     s.commit()
