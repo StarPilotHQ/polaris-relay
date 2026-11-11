@@ -147,16 +147,17 @@ class SiteClient:
   def me(self) -> dict:
     return self._json(self._call("GET", "/me"))
 
-  def device_verified(self, dongle_id: str) -> bool:
-    return bool(self._json(self._call("POST", "/devices/check", json={"dongle_id": dongle_id})).get("verified"))
+  def device_verified(self, dongle_id: str, provider: str = "comma") -> bool:
+    body = {"dongle_id": dongle_id, **({"provider": provider} if provider != "comma" else {})}
+    return bool(self._json(self._call("POST", "/devices/check", json=body)).get("verified"))
 
   def schema_bundle(self) -> tuple[str, bytes]:
     r = self._call("GET", "/schema")
     version = r.headers.get("x-schema-version") or hashlib.sha256(r.content).hexdigest()[:12]
     return version, r.content
 
-  def create_route(self, fullname: str) -> dict:
-    return self._json(self._call("POST", "/routes", json={"route": fullname}))
+  def create_route(self, fullname: str, prefix: str = "") -> dict:
+    return self._json(self._call("POST", "/routes", json={"route": prefix + fullname}))
 
   def put_qlog(self, handle: str, segment: int, path: Path, sha256: str, name: str,
                deadline_s: float = FILE_DEADLINE_S) -> None:

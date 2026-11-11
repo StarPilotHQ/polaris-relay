@@ -30,6 +30,8 @@ class Config:
   origins_given: bool = False
   comma_api: str = "https://api.commadotai.com"
   athena_api: str = "https://athena.comma.ai"
+  konik_api: str = "https://api.konik.ai"
+  konik_athena: str = "https://api.konik.ai/ws"
   registry: str = "https://ghcr.io"
   image: str = "starpilothq/polaris-relay"
   tick_s: float = 60.0
@@ -74,12 +76,16 @@ class Config:
       c.warnings.append("ALLOWED_ORIGINS is *: forms are accepted from any site's origin; only the CSRF token "
                         "protects them.")
     c.trusted_proxies = _split(env.get("TRUSTED_PROXIES", ""))
-    for name in ("COMMA_API", "ATHENA_API", "REGISTRY"):
+    for name in ("COMMA_API", "ATHENA_API", "KONIK_API", "KONIK_ATHENA", "REGISTRY"):
       if env.get(f"RELAY_{name}"):
         setattr(c, name.lower(), env[f"RELAY_{name}"].rstrip("/"))
     if env.get("RELAY_TICK_S"):
       c.tick_s = float(env["RELAY_TICK_S"])
     return c
+
+  def endpoints(self, cloud: str) -> tuple[str, str]:
+    """(API, athena) for a cloud in `comma.CLOUDS`."""
+    return (self.konik_api, self.konik_athena) if cloud == "konik" else (self.comma_api, self.athena_api)
 
   @property
   def secure_cookies(self) -> bool:

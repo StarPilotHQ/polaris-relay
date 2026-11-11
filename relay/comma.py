@@ -26,6 +26,36 @@ ROUTE_PAGES = 20
 log = logging.getLogger("relay")
 
 
+@dataclass(frozen=True)
+class Cloud:
+  """A service with comma's API that devices upload to. `procqlog`: whether its route list reports processed qlogs.
+  `site_route` prefixes `<dongle>|<route>` when opening a route on the site."""
+  name: str
+  label: str
+  api: str
+  athena: str
+  connect: str
+  token_from: str
+  procqlog: bool
+  site_route: str
+  public: bool
+
+
+CLOUDS = {
+  "comma": Cloud("comma", "comma", "https://api.commadotai.com", "https://athena.comma.ai", "comma connect",
+                 "jwt.comma.ai", True, "", True),
+  # Konik Stable runs comma's API on its own host. Its athena answers JSON-RPC at api.konik.ai/ws (athena.konik.ai
+  # turns away plain HTTP clients), and its route list leaves procqlog at -1. The site copies public routes only from
+  # comma, so Konik drives always go through this machine.
+  "konik": Cloud("konik", "Konik", "https://api.konik.ai", "https://api.konik.ai/ws", "Konik Stable",
+                 "the Konik sign-in on your computer (~/.comma/auth.json after tools/lib/auth.py)", False, "konik:", False),
+}
+
+
+def cloud(name: str | None) -> Cloud:
+  return CLOUDS.get(name or "", CLOUDS["comma"])
+
+
 def read_only(device: dict) -> bool:
   return device.get("is_owner") is False
 
@@ -117,7 +147,8 @@ def files_by_segment(files: dict) -> dict[str, dict[int, tuple[str, str]]]:
 
 class CommaClient:
   def __init__(self, token: str, api: str = "https://api.commadotai.com", athena: str = "https://athena.comma.ai",
-               transport: httpx.BaseTransport | None = None, timeout: float = 30.0):
+               transport: httpx.BaseTransport | None = None, timeout: float = 30.0, cloud: str = "comma"):
+    self.cloud = CLOUDS[cloud]
     headers = {"Authorization": f"JWT {token}"}
     self.http = httpx.Client(base_url=api, headers=headers, transport=transport, timeout=timeout)
     self.athena = httpx.Client(base_url=athena, headers=headers, transport=transport, timeout=timeout)

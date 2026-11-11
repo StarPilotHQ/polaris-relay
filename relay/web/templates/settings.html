@@ -7,15 +7,20 @@
   {% if onboarding %}<p>Nothing is sent anywhere until you finish setup at the bottom of this page.</p>{% endif %}</div></div>
 
 <section class="gx-card">
-  {{ header("key", "1. comma token") }}
+  {{ header("key", "1. comma or Konik token") }}
   <div class="gx-panel rl-form rl-prose">
-    <p>Get a token at <a href="https://jwt.comma.ai" target="_blank" rel="noopener noreferrer">jwt.comma.ai</a>
-    (sign in with the account your devices are paired to) and paste it here. It stays on this machine and is only
-    sent to comma.</p>
-    {% if comma_set %}<p class="rl-ok"><i class="bi bi-check-circle" aria-hidden="true"></i>Saved{% if comma_expiry %}; expires {{ when(comma_expiry) }}{% endif %}.
+    <p>Choose the service your devices upload to. For comma, get a token at
+    <a href="https://jwt.comma.ai" target="_blank" rel="noopener noreferrer">jwt.comma.ai</a> (sign in with the account
+    your devices are paired to). For Konik Stable, use the token from the Konik sign-in on your computer
+    (<code>~/.comma/auth.json</code> after <code>tools/lib/auth.py</code>). It stays on this machine and is only sent to
+    the service you choose.</p>
+    {% if comma_set %}<p class="rl-ok"><i class="bi bi-check-circle" aria-hidden="true"></i>Saved for {{ cloud.connect }}{% if comma_expiry %}; expires {{ when(comma_expiry) }}{% endif %}.
     Paste a new one to replace it.</p>{% endif %}
     <form method="post" action="/setup/comma" class="rl-row">{{ field() }}
-      <input class="gx-field rl-grow" name="token" type="password" autocomplete="off" placeholder="eyJ..." required aria-label="comma token">
+      <select class="gx-field" name="cloud" aria-label="Service">
+        {% for c in clouds %}<option value="{{ c.name }}" {{ "selected" if c.name == cloud.name }}>{{ c.connect }}</option>{% endfor %}
+      </select>
+      <input class="gx-field rl-grow" name="token" type="password" autocomplete="off" placeholder="eyJ..." required aria-label="Token">
       <button class="gx-btn gx-btn--small">Save</button>
     </form>
   </div>
@@ -43,7 +48,7 @@
   <div class="gx-section__header"><i class="bi bi-phone" aria-hidden="true"></i><h2 class="gx-section__title">3. Devices</h2>{% if devices %}<span class="gx-section__count">{{ devices|length }}</span>{% endif %}</div>
   <div class="gx-panel">
     <p>Enable a device once it's verified on the site. Only drives that start after you enable it are picked up.</p>
-    {% if not devices %}<p class="gx-note">No devices yet. Save your comma token first.</p>{% endif %}
+    {% if not devices %}<p class="gx-note">No devices yet. Save your comma or Konik token first.</p>{% endif %}
   </div>
   {% for d in devices %}
   <div class="gx-row gx-row--wrap rl-device">
@@ -90,11 +95,13 @@
         <span><strong>Relay through this machine</strong> (recommended). This machine downloads the needed segments from
         comma and uploads them to the site. Your route is never made public. Costs your bandwidth: roughly 75 to 115 MB
         per segment, down and up again.</span></label>
-      <label class="rl-choice"><input type="radio" name="transfer" value="public" {{ "checked" if transfer == "public" }}>
+      {% if cloud.public %}<label class="rl-choice"><input type="radio" name="transfer" value="public" {{ "checked" if transfer == "public" }}>
         <span><strong>Make the route public briefly</strong>. The route is made public, the site copies the segments
         from comma, and the route is made private again. Uses almost no bandwidth here, but while it's public
         <strong>anyone with the route's name can read the whole route, privacy-zone segments included</strong>, for up
         to {{ public_cap_h|round(1) }} hours, and longer if this machine stops mid-step.</span></label>
+      {% else %}<p class="gx-note">The site copies public routes only from comma, so {{ cloud.label }} drives always go
+        through this machine.</p>{% endif %}
     </div>
     <div>
       <label class="rl-inline-field">Also keep private this many segments on each side of a zone segment

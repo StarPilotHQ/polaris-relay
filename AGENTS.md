@@ -173,6 +173,24 @@ From comma's own clients, not its docs (old Connect `src/api.js`, new Connect `s
   empty answer shouldn't lose its settings.
 - New Connect treats a device as online when `last_athena_ping` is within 120 s; Polaris Relay uses 10 minutes.
 
+## Konik Stable
+
+Checked with a real Konik token in November 2026 (read-only calls: devices, `routes_segments`, `/files`, a route,
+`listUploadQueue`):
+
+- Same API as comma at `api.konik.ai`; the JWT is sent the same way (`Authorization: JWT`). A Konik token gets 401
+  from comma and the other way round, so the service is chosen with the token (`cloud` setting), never guessed by
+  trying one.
+- athena's JSON-RPC answers at `https://api.konik.ai/ws/<dongle>`; `athena.konik.ai` gives plain HTTP clients a
+  Cloudflare 403 (1010).
+- `procqlog` is always -1, so the "quiet" check skips it for Konik (`Cloud.procqlog`); comma still needs it.
+- Signed file URLs are on `api.konik.ai/connectdata/...?sig=` and work without the JWT, like comma's.
+- The site takes Konik routes as `konik:<dongle>|<route>` and `/devices/check` with `provider: konik`; its
+  `konik_not_allowed` and `konik_api_not_allowed` are account-level (`pipeline.ACCOUNT`). It copies public routes
+  only from comma, so Konik forces `transfer = relay`. Switching service disables every device (verification is per
+  service) and is refused while a drive is still public.
+- Not yet checked live: `upload_urls` and `uploadFilesToUrls` on Konik, and a full drive through the site.
+
 ## Not verified against reality
 
 No real route has been through the daemon, and StarPilot's athenad hasn't been compared with upstream's upload queue.

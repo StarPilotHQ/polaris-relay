@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from relay import __version__, cluster, db, notify
-from relay.comma import CommaClient, CommaError, read_only, token_expiry
+from relay.comma import CLOUDS, CommaClient, CommaError, cloud, read_only, token_expiry
 from relay.config import Config
 from relay.db import Device, Notifier, Route, Zone, now_utc
 from relay.pipeline import State, Worker, deprecation_parts, filter_changed, version_banner
@@ -92,7 +92,8 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   templates = Jinja2Templates(directory=str(HERE / "templates"))
   templates.env.globals["when"] = when
   templates.env.globals["step_labels"] = STEP_LABELS
-  comma_factory = comma_factory or (lambda token: CommaClient(token, config.comma_api, config.athena_api))
+  comma_factory = comma_factory or (
+    lambda token, cloud="comma": CommaClient(token, *config.endpoints(cloud), cloud=cloud))
   site_factory = site_factory or (lambda token: SiteClient(config.polaris_host, token))
   worker = worker or Worker(config, sessionmaker, comma_factory, site_factory)
   app.state.worker = worker
@@ -284,6 +285,7 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
             "zone_count": len(s.scalars(select(Zone.id)).all()),
             "comma_set": bool(db.get(s, "comma_token")), "comma_expiry": token_expiry(db.get(s, "comma_token") or ""),
             "token_info": db.get(s, "token_info"), "onboarded": db.get(s, "onboarded_at"),
+            "cloud": cloud(db.get(s, "cloud")), "clouds": CLOUDS.values(),
             **{k: db.get(s, k) for k in keys}}
 
   @app.get("/setup", response_class=HTMLResponse)
@@ -320,30 +322,43 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
     return owned
 
   @app.post("/setup/comma")
-  def set_comma(request: Request, token: str = Form(""), _=Depends(require_user), __=Depends(check_csrf),
-                s: Session = Depends(get_db)):
+  def set_comma(request: Request, token: str = Form(""), cloud_name: str = Form("comma", alias="cloud"),
+                _=Depends(require_user), __=Depends(check_csrf), s: Session = Depends(get_db)):
+    c = cloud(cloud_name)
     token = token.strip().removeprefix("JWT ").strip()
     exp = token_expiry(token)
     if exp is None:
-      flash(request, "That doesn't look like a comma token. Copy the whole token from jwt.comma.ai.", "error")
+      flash(request, f"That doesn't look like a {c.label} token. Copy the whole token from {c.token_from}.", "error")
       return back(settings_url(s))
     if exp < now_utc():
-      flash(request, "That token has already expired. Get a new one from jwt.comma.ai.", "error")
+      flash(request, f"That token has already expired. Get a new one from {c.token_from}.", "error")
       return back(settings_url(s))
-    comma = comma_factory(token)
+    switching = c.name != db.get(s, "cloud")
+    if switching and s.scalar(select(Route.fullname).where(Route.public_since.is_not(None)).limit(1)):
+      flash(request, f"A drive is still public on {cloud(db.get(s, 'cloud')).connect}. Wait until it's private "
+                     "again before switching.", "error")
+      return back(settings_url(s))
+    comma = comma_factory(token, c.name)
     try:
+      if switching:  # devices are verified with the site per service: each is enabled again on the new one
+        for d in s.scalars(select(Device)).all():
+          d.enabled = False
       n = refresh_devices(s, comma)
     except CommaError as e:
-      flash(request, f"comma didn't accept that token ({e}).", "error")
+      s.rollback()
+      flash(request, f"{c.label} didn't accept that token ({e}).", "error")
       return back(settings_url(s))
     finally:
       comma.close()
+    db.put(s, "cloud", c.name)
+    if not c.public:
+      db.put(s, "transfer", "relay")
     db.put(s, "comma_token", token)
     db.delete(s, "pause:comma")
     notify.clear(s, "comma_token")
     notify.clear(s, "comma_token_expiring")
     s.commit()
-    flash(request, f"comma token saved. Found {n} device{'s' if n != 1 else ''}.")
+    flash(request, f"{c.label} token saved. Found {n} device{'s' if n != 1 else ''}.")
     return back(settings_url(s))
 
   @app.post("/setup/token")
@@ -380,9 +395,9 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   def devices_refresh(request: Request, _=Depends(require_user), __=Depends(check_csrf), s: Session = Depends(get_db)):
     token = db.get(s, "comma_token")
     if not token:
-      flash(request, "Paste your comma token first.", "error")
+      flash(request, "Paste your comma or Konik token first.", "error")
       return back(settings_url(s))
-    comma = comma_factory(token)
+    comma = comma_factory(token, db.get(s, "cloud"))
     try:
       refresh_devices(s, comma)
     except CommaError as e:
@@ -403,15 +418,17 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
       return back(settings_url(s))
     site = site_factory(token)
     try:
-      verified = site.device_verified(d.dongle_id)
+      verified = site.device_verified(d.dongle_id, db.get(s, "cloud"))
     except SiteError as e:
       flash(request, f"Couldn't ask the site about this device ({e}).", "error")
       return back(settings_url(s))
     finally:
       site.close()
     if not verified:
+      konik = " A Konik Stable device also needs an operator to allow your account on the site and through the API." \
+        if db.get(s, "cloud") == "konik" else ""
       flash(request, f"The site hasn't verified {d.alias or 'this device'} on your account. Enter one of its routes on "
-                     "the site to run the device check, then enable it here.", "error")
+                     f"the site to run the device check, then enable it here.{konik}", "error")
       return back(settings_url(s))
     resuming = bool(d.paused_reason) and d.enabled
     d.paused_reason, d.verified_at = None, now_utc()
@@ -454,7 +471,8 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   def settings_general(request: Request, transfer: str = Form("relay"), surround: str = Form("0"),
                        update_check: str = Form(""), _=Depends(require_user), __=Depends(check_csrf),
                        s: Session = Depends(get_db)):
-    db.put(s, "transfer", transfer if transfer in ("relay", "public") else "relay")
+    public_ok = cloud(db.get(s, "cloud")).public
+    db.put(s, "transfer", transfer if transfer in ("relay", "public") and public_ok else "relay")
     if int(_num(surround, 0, 5, 0)) != db.get(s, "surround"):
       db.put(s, "surround", int(_num(surround, 0, 5, 0)))
       filter_changed(s)
@@ -555,8 +573,8 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   def zone_proposals(_=Depends(require_user), s: Session = Depends(get_db)):
     token = db.get(s, "comma_token")
     if not token:
-      return JSONResponse({"error": "Paste your comma token first."}, status_code=400)
-    comma = comma_factory(token)
+      return JSONResponse({"error": "Paste your comma or Konik token first."}, status_code=400)
+    comma = comma_factory(token, db.get(s, "cloud"))
     points: list[tuple[float, float]] = []
     try:
       end = now_utc()

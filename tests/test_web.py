@@ -58,7 +58,8 @@ def make_client(tmp_path, fakes, **extra) -> tuple[TestClient, object]:
   config = Config.from_env(env(tmp_path, **extra))
   sm = make_sessionmaker(config.data_dir)
   app = create_app(config, sm,
-                   comma_factory=lambda t: CommaClient(t, "https://comma.test", transport=httpx.MockTransport(comma.handler)),
+                   comma_factory=lambda t, cloud="comma": CommaClient(t, "https://comma.test", cloud=cloud,
+                                                                      transport=httpx.MockTransport(comma.handler)),
                    site_factory=lambda t: SiteClient("https://site.test", t, transport=httpx.MockTransport(site.handler)))
   return TestClient(app), sm
 

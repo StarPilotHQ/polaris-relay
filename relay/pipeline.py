@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from relay import __version__, db, notify, privacy, updates
 from relay.comma import (KIND_FILES, NEVER_KINDS, CommaAuthError, CommaClient, CommaError, CommaNotFound, LinkExpired,
-                         read_only, token_expiry)
+                         cloud, read_only, token_expiry)
 from relay.config import Config
 from relay.db import Device, Route, Zone, now_utc
 from relay.qlogs import read_scans
@@ -73,6 +73,10 @@ TERMINAL = {
 # Site errors about the whole account: everything stops until the user acts on the site.
 ACCOUNT = {
   "account_banned": "The site says your account can't submit. Nothing is sent until that changes.",
+  "konik_not_allowed": "The site hasn't allowed your account to submit Konik Stable drives yet. Follow the steps on the "
+                       "site's Submit page, then save your access token again here.",
+  "konik_api_not_allowed": "The site hasn't allowed your account to submit Konik Stable drives through the API yet. Ask "
+                           "an operator to allow it, then save your access token again here.",
   "credit_choice_needed": "Choose how you'd like to be credited on the site (your Profile page), then save your access "
                           "token again here.",
 }
@@ -132,7 +136,8 @@ class Worker:
   def __init__(self, config: Config, sessionmaker, comma_factory=None, site_factory=None):
     self.config = config
     self.sessionmaker = sessionmaker
-    self.comma_factory = comma_factory or (lambda token: CommaClient(token, config.comma_api, config.athena_api))
+    self.comma_factory = comma_factory or (
+      lambda token, cloud="comma": CommaClient(token, *config.endpoints(cloud), cloud=cloud))
     self.site_factory = site_factory or (lambda token: SiteClient(config.polaris_host, token))
     self.lock = threading.Lock()
     # Held for every change to whether a route is public, by the worker and the safety net's thread alike, so
@@ -183,7 +188,7 @@ class Worker:
       public = s.scalar(select(Route.fullname).where(Route.public_since.is_not(None)).limit(1))
       if token and public and not db.get(s, "pause:comma"):
         can_advance = bool(db.get(s, "onboarded_at")) and not db.get(s, "pause:site")
-        comma = self.comma_factory(token)
+        comma = self.comma_factory(token, db.get(s, "cloud"))
         try:
           self.safety_net(s, comma, can_advance)
         except CommaAuthError:
@@ -207,7 +212,7 @@ class Worker:
       if not comma_token or not access_token or db.get(s, "pause:comma"):
         return
       self.warn_token_expiry(s, comma_token)
-      comma, site = self.comma_factory(comma_token), self.site_factory(access_token)
+      comma, site = self.comma_factory(comma_token, db.get(s, "cloud")), self.site_factory(access_token)
       try:
         if db.get(s, "pause:site"):
           return
@@ -246,10 +251,11 @@ class Worker:
   # ----- global conditions -----
 
   def comma_refused(self, s: Session) -> None:
-    db.put(s, "pause:comma", "comma refused your token. Paste a new one from jwt.comma.ai in Setup.")
+    c = cloud(db.get(s, "cloud"))
+    db.put(s, "pause:comma", f"{c.label} refused your token. Paste a new one from {c.token_from} in Setup.")
     s.commit()
     public = len(s.scalars(select(Route.fullname).where(Route.public_since.is_not(None))).all())
-    body = "comma refused your token. Paste a new one in Setup."
+    body = f"{c.label} refused your token. Paste a new one in Setup."
     if public:  # without a token they can't be made private from here
       body += f" {public} drive{'s' if public != 1 else ''} may still be public: make {'them' if public != 1 else 'it'} " \
               "private in comma connect."
@@ -306,9 +312,10 @@ class Worker:
     exp = token_expiry(token)
     if exp and exp - now_utc() < TOKEN_WARN:
       left = max(0, (exp - now_utc()).days)
-      notify.event(s, "comma_token_expiring", "comma token expiring",
-                   f"Your comma token expires in {left} day{'s' if left != 1 else ''}. Paste a new one from "
-                   "jwt.comma.ai in Setup.")
+      c = cloud(db.get(s, "cloud"))
+      notify.event(s, "comma_token_expiring", f"{c.label} token expiring",
+                   f"Your {c.label} token expires in {left} day{'s' if left != 1 else ''}. Paste a new one from "
+                   f"{c.token_from} in Setup.")
 
   # ----- public routes -----
 
@@ -765,7 +772,7 @@ class Worker:
     ping_after = timedelta(minutes=float(db.get(s, "ping_after_end_min")))
     conds = {
       "pinged": bool(r.end_time) and d.last_athena_ping >= (r.end_time + ping_after).timestamp(),
-      "quiet": r.maxqlog >= 0 and r.procqlog == r.maxqlog and r.maxqlog_changed_at is not None
+      "quiet": r.maxqlog >= 0 and (r.procqlog == r.maxqlog or not comma.cloud.procqlog) and r.maxqlog_changed_at is not None
                and now - r.maxqlog_changed_at >= timedelta(minutes=float(db.get(s, "quiet_min"))),
       "settled": (newest is not None and r.start_time is not None and newest > r.start_time)
                  or (bool(r.end_time) and now - r.end_time >= timedelta(minutes=float(db.get(s, "settle_min")))),
@@ -833,7 +840,7 @@ class Worker:
     if not files:
       self.finish(s, r, State.SKIPPED, "Every segment was in or near a privacy zone.", site)
       return False
-    created = site.create_route(r.fullname)
+    created = site.create_route(r.fullname, comma.cloud.site_route)
     r.handle, r.submittable, r.link = created["id"], bool(created.get("submittable")), created.get("link") or r.link
     d.verified_at = now_utc()
     s.commit()
@@ -998,7 +1005,7 @@ class Worker:
       n = r.suggestions
       self.finish(s, r, State.SUGGESTED, "", site)
       return False
-    r.transfer = db.get(s, "transfer")
+    r.transfer = db.get(s, "transfer") if cloud(db.get(s, "cloud")).public else "relay"
     if r.transfer == "relay":
       r.state = State.TRANSFERRING
       return True

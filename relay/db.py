@@ -189,6 +189,7 @@ def make_sessionmaker(data_dir: Path):
 
 
 DEFAULTS = {
+  "cloud": "comma",
   "transfer": "relay",
   "surround": 0,
   "tile_url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
