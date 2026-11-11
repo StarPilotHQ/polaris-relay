@@ -196,8 +196,10 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
         link = link if link.startswith(config.polaris_host + "/") else config.site_url("/docs/api")
         text = Markup("").join(when(p, "date") if isinstance(p, datetime) else p for p in deprecation_parts(dep, now_utc()))
         banners.append(("warning", text, link))
-      if (exp := token_expiry(db.get(s, "comma_token") or "")) and exp - now_utc() < timedelta(days=7):
-        banners.append(("warning", Markup("Your comma token expires {}. Paste a new one in Setup.").format(when(exp))))
+      token, service = db.get_many(s, "comma_token", "cloud")
+      if (exp := token_expiry(token or "")) and exp - now_utc() < timedelta(days=7):
+        banners.append(("warning", Markup("Your {} token expires {}. Paste a new one in Setup.").format(
+          cloud(service).label, when(exp))))
       if latest := version_banner(s):
         banners.append(("info", f"Version {latest} is available (you have {__version__})."))
     flashes = request.session.pop("flash", [])
@@ -279,14 +281,18 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   # ----- setup and settings -----
 
   def settings_ctx(s: Session) -> dict:
-    keys = ("transfer", "surround", "tile_url", "update_check", "upload_cellular", "digest", "ping_after_end_min", "quiet_min",
-            "settle_min", "files_wait_days", "public_cap_h", "auto_withdraw", "submit_delay_min")
-    return {"devices": s.scalars(select(Device).order_by(Device.alias)).all(),
+    keys = ("transfer", "surround", "tile_url", "update_check", "upload_cellular", "digest", "ping_after_end_min",
+            "quiet_min", "settle_min", "files_wait_days", "public_cap_h", "auto_withdraw", "submit_delay_min")
+    token, service = db.get_many(s, "comma_token", "cloud")
+    c = cloud(service)
+    values = {k: db.get(s, k) for k in keys}
+    if not c.public:  # the pipeline relays whatever is stored; show what it will do
+      values["transfer"] = "relay"
+    return {"devices": s.scalars(select(Device).where(Device.cloud == c.name).order_by(Device.alias)).all(),
             "zone_count": len(s.scalars(select(Zone.id)).all()),
-            "comma_set": bool(db.get(s, "comma_token")), "comma_expiry": token_expiry(db.get(s, "comma_token") or ""),
+            "comma_set": bool(token), "comma_expiry": token_expiry(token or ""),
             "token_info": db.get(s, "token_info"), "onboarded": db.get(s, "onboarded_at"),
-            "cloud": cloud(db.get(s, "cloud")), "clouds": CLOUDS.values(),
-            **{k: db.get(s, k) for k in keys}}
+            "cloud": c, "clouds": CLOUDS.values(), **values}
 
   @app.get("/setup", response_class=HTMLResponse)
   def setup(request: Request, _=Depends(require_user), s: Session = Depends(get_db)):
@@ -303,28 +309,49 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   def settings_url(s: Session) -> str:
     return "/settings" if db.get(s, "onboarded_at") else "/setup"
 
-  def refresh_devices(s: Session, comma: CommaClient) -> int:
+  def save_devices(s: Session, listed: list[dict], service: str) -> int:
+    """Store a device list read beforehand (no write may be pending across the call to the service). A device the
+    other service listed before is moved here, disabled: the site verifies devices per service."""
     owned = 0
-    for dev in comma.devices():
+    for dev in listed:
       dongle = (dev.get("dongle_id") or "").lower()
       if len(dongle) != 16:
         continue
       d = s.get(Device, dongle)
       if read_only(dev):
-        if d is not None:
+        if d is not None and d.cloud == service:
           s.delete(d)
         continue
-      d = d or Device(dongle_id=dongle, enabled=False)
+      if d is None:
+        d = Device(dongle_id=dongle, enabled=False, cloud=service)
+        s.add(d)
+      elif d.cloud != service:
+        d.cloud, d.enabled = service, False
       d.alias, d.last_athena_ping = dev.get("alias") or dev.get("device_type") or "", int(dev.get("last_athena_ping") or 0)
-      s.add(d)
       owned += 1
-    s.commit()
     return owned
+
+  def list_devices(token: str, service: str) -> list[dict]:
+    comma = comma_factory(token, service)
+    try:
+      return comma.devices()
+    finally:
+      comma.close()
+
+  def current_device(s: Session, dongle_id: str) -> Device:
+    """A device of the service in use; one only another service listed is as good as missing."""
+    d = s.get(Device, dongle_id)
+    if d is None or d.cloud != cloud(db.get_many(s, "cloud")[0]).name:
+      raise HTTPException(404)
+    return d
 
   @app.post("/setup/comma")
   def set_comma(request: Request, token: str = Form(""), cloud_name: str = Form("comma", alias="cloud"),
                 _=Depends(require_user), __=Depends(check_csrf), s: Session = Depends(get_db)):
-    c = cloud(cloud_name)
+    if cloud_name not in CLOUDS:
+      flash(request, "Choose comma connect or Konik Stable.", "error")
+      return back(settings_url(s))
+    c = CLOUDS[cloud_name]
     token = token.strip().removeprefix("JWT ").strip()
     exp = token_expiry(token)
     if exp is None:
@@ -333,31 +360,34 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
     if exp < now_utc():
       flash(request, f"That token has already expired. Get a new one from {c.token_from}.", "error")
       return back(settings_url(s))
-    switching = c.name != db.get(s, "cloud")
-    if switching and s.scalar(select(Route.fullname).where(Route.public_since.is_not(None)).limit(1)):
-      flash(request, f"A drive is still public on {cloud(db.get(s, 'cloud')).connect}. Wait until it's private "
-                     "again before switching.", "error")
-      return back(settings_url(s))
-    comma = comma_factory(token, c.name)
+    s.commit()
     try:
+      listed = list_devices(token, c.name)
+    except CommaError as e:
+      flash(request, f"{c.label} didn't accept that token ({e}).", "error")
+      return back(settings_url(s))
+    # The worker makes routes public under this lock and re-reads the device first: checked and saved under it, a
+    # switch either sees the public route and refuses, or commits disabled devices the worker then sees.
+    with worker.public_lock:
+      was = cloud(db.get_many(s, "cloud")[0])
+      switching = c.name != was.name
+      # Only routes on another service than the new one block it: switching to a public route's service lets it be
+      # made private again.
+      public_on = s.scalar(select(Route.cloud).where(Route.public_since.is_not(None), Route.cloud != c.name).limit(1))
+      if switching and public_on:
+        flash(request, f"A drive is still public on {cloud(public_on).connect}. Wait until it's private again before "
+                       "switching.", "error")
+        return back(settings_url(s))
       if switching:  # devices are verified with the site per service: each is enabled again on the new one
         for d in s.scalars(select(Device)).all():
           d.enabled = False
-      n = refresh_devices(s, comma)
-    except CommaError as e:
-      s.rollback()
-      flash(request, f"{c.label} didn't accept that token ({e}).", "error")
-      return back(settings_url(s))
-    finally:
-      comma.close()
-    db.put(s, "cloud", c.name)
-    if not c.public:
-      db.put(s, "transfer", "relay")
-    db.put(s, "comma_token", token)
-    db.delete(s, "pause:comma")
-    notify.clear(s, "comma_token")
-    notify.clear(s, "comma_token_expiring")
-    s.commit()
+      n = save_devices(s, listed, c.name)
+      db.put(s, "cloud", c.name)
+      db.put(s, "comma_token", token)
+      db.delete(s, "pause:comma")
+      notify.clear(s, "comma_token")
+      notify.clear(s, "comma_token_expiring")
+      s.commit()
     flash(request, f"{c.label} token saved. Found {n} device{'s' if n != 1 else ''}.")
     return back(settings_url(s))
 
@@ -393,32 +423,33 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
 
   @app.post("/devices/refresh")
   def devices_refresh(request: Request, _=Depends(require_user), __=Depends(check_csrf), s: Session = Depends(get_db)):
-    token = db.get(s, "comma_token")
+    token, service = db.get_many(s, "comma_token", "cloud")
     if not token:
       flash(request, "Paste your comma or Konik token first.", "error")
       return back(settings_url(s))
-    comma = comma_factory(token, db.get(s, "cloud"))
+    s.commit()
     try:
-      refresh_devices(s, comma)
+      listed = list_devices(token, service)
     except CommaError as e:
       flash(request, f"Couldn't list your devices ({e}).", "error")
-    finally:
-      comma.close()
+      return back(settings_url(s))
+    with worker.public_lock:  # a switch saves under it, so it can't land between this check and the save
+      if db.get_many(s, "cloud")[0] == service:  # switched meanwhile: that list is of the other service's devices
+        save_devices(s, listed, service)
+        s.commit()
     return back(settings_url(s))
 
   @app.post("/devices/{dongle_id}/enable")
   def device_enable(request: Request, dongle_id: str, _=Depends(require_user), __=Depends(check_csrf),
                     s: Session = Depends(get_db)):
-    d = s.get(Device, dongle_id)
+    d = current_device(s, dongle_id)
     token = db.get(s, "access_token")
-    if d is None:
-      raise HTTPException(404)
     if not token:
       flash(request, "Paste your access token first; the site has to confirm the device.", "error")
       return back(settings_url(s))
     site = site_factory(token)
     try:
-      verified = site.device_verified(d.dongle_id, db.get(s, "cloud"))
+      verified = site.device_verified(d.dongle_id, d.cloud)
     except SiteError as e:
       flash(request, f"Couldn't ask the site about this device ({e}).", "error")
       return back(settings_url(s))
@@ -426,16 +457,20 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
       site.close()
     if not verified:
       konik = " A Konik Stable device also needs an operator to allow your account on the site and through the API." \
-        if db.get(s, "cloud") == "konik" else ""
+        if d.cloud == "konik" else ""
       flash(request, f"The site hasn't verified {d.alias or 'this device'} on your account. Enter one of its routes on "
                      f"the site to run the device check, then enable it here.{konik}", "error")
       return back(settings_url(s))
-    resuming = bool(d.paused_reason) and d.enabled
-    d.paused_reason, d.verified_at = None, now_utc()
-    if not resuming:  # a resume after a site pause picks up the drives made while it was paused (it stayed enabled)
-      d.enabled, d.enabled_at = True, now_utc()
-    notify.clear(s, f"device:{d.dongle_id}")
-    s.commit()
+    with worker.public_lock:  # a switch saves under it: checked and enabled here, neither lands between the two
+      s.refresh(d)
+      if d.cloud != cloud(db.get_many(s, "cloud")[0]).name:  # switched while the site answered
+        raise HTTPException(404)
+      resuming = bool(d.paused_reason) and d.enabled
+      d.paused_reason, d.verified_at = None, now_utc()
+      if not resuming:  # a resume after a site pause picks up the drives made while it was paused (it stayed enabled)
+        d.enabled, d.enabled_at = True, now_utc()
+      notify.clear(s, f"device:{d.dongle_id}")
+      s.commit()
     flash(request, f"{d.alias or 'Device'} resumed. Drives from the last few days that it missed are picked up." if resuming
           else f"{d.alias or 'Device'} enabled. Drives that start from now on are picked up; earlier ones aren't.")
     return back(settings_url(s))
@@ -443,8 +478,7 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   @app.post("/devices/{dongle_id}/disable")
   def device_disable(request: Request, dongle_id: str, _=Depends(require_user), __=Depends(check_csrf),
                      s: Session = Depends(get_db)):
-    if (d := s.get(Device, dongle_id)) is None:
-      raise HTTPException(404)
+    d = current_device(s, dongle_id)
     d.enabled = False
     s.commit()
     flash(request, f"{d.alias or 'Device'} disabled. Drives already in progress stop where they are.")
@@ -453,8 +487,7 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   @app.post("/devices/{dongle_id}/options")
   def device_options(request: Request, dongle_id: str, mode: str = Form("auto"), record_drives: str = Form(""),
                      _=Depends(require_user), __=Depends(check_csrf), s: Session = Depends(get_db)):
-    if (d := s.get(Device, dongle_id)) is None:
-      raise HTTPException(404)
+    d = current_device(s, dongle_id)
     d.mode = mode if mode in ("auto", "suggest") else "auto"
     d.record_drives = bool(record_drives)
     s.commit()
@@ -470,10 +503,9 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
   @app.post("/settings/general")
   def settings_general(request: Request, transfer: str = Form("relay"), surround: str = Form("0"),
                        update_check: str = Form(""), upload_cellular: str = Form(""), _=Depends(require_user),
-                       __=Depends(check_csrf),
-                       s: Session = Depends(get_db)):
-    public_ok = cloud(db.get(s, "cloud")).public
-    db.put(s, "transfer", transfer if transfer in ("relay", "public") and public_ok else "relay")
+                       __=Depends(check_csrf), s: Session = Depends(get_db)):
+    if transfer in ("relay", "public") and cloud(db.get(s, "cloud")).public:  # Konik has no choice: keep the saved one
+      db.put(s, "transfer", transfer)
     if int(_num(surround, 0, 5, 0)) != db.get(s, "surround"):
       db.put(s, "surround", int(_num(surround, 0, 5, 0)))
       filter_changed(s)
@@ -573,10 +605,10 @@ def create_app(config: Config, sessionmaker, worker: Worker | None = None, *, st
 
   @app.get("/zones/proposals")
   def zone_proposals(_=Depends(require_user), s: Session = Depends(get_db)):
-    token = db.get(s, "comma_token")
+    token, service = db.get_many(s, "comma_token", "cloud")
     if not token:
       return JSONResponse({"error": "Paste your comma or Konik token first."}, status_code=400)
-    comma = comma_factory(token, db.get(s, "cloud"))
+    comma = comma_factory(token, service)
     points: list[tuple[float, float]] = []
     try:
       end = now_utc()

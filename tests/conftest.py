@@ -109,7 +109,8 @@ class FakeComma:
   def route_obj(self) -> dict:
     return {"fullname": ROUTE, "start_time_utc_millis": int(T0.timestamp() * 1000),
             "end_time_utc_millis": int((T0 + timedelta(minutes=len(self.qlogs))).timestamp() * 1000),
-            "maxqlog": self.maxqlog, "procqlog": self.maxqlog if self.procqlog else -1, "segment_numbers": sorted(self.qlogs),
+            "maxqlog": self.maxqlog, "procqlog": self.maxqlog if self.procqlog else -1,
+            "segment_numbers": sorted(self.qlogs),
             "start_lat": self.start_point[0] if self.start_point else 0,
             "start_lng": self.start_point[1] if self.start_point else 0,
             "end_lat": self.end_point[0] if self.end_point else 0, "end_lng": self.end_point[1] if self.end_point else 0,
@@ -344,7 +345,7 @@ def onboard(worker: Worker, *, zones=(), surround: int = 0, mode: str = "auto", 
     db.put(s, "cloud", cloud)
     db.put(s, "update_check", False)
     s.add(Device(dongle_id=DONGLE, alias="Test car", enabled=True, mode=mode, record_drives=record_drives,
-                 enabled_at=T0 - timedelta(days=1)))
+                 enabled_at=T0 - timedelta(days=1), cloud=cloud))
     for z in zones:
       s.add(z)
     s.commit()

@@ -162,6 +162,7 @@ From comma's own clients, not its docs (old Connect `src/api.js`, new Connect `s
 - `PATCH /v1/route/<fullname>/` with `{"is_public": bool}` makes a route public or private.
 - Connect sends `uploadFilesToUrls` items with `allow_cellular: false` and `priority: 1`: stock athenad then skips
   metered connections, and StarPilot's `AlwaysAllowUploads` setting overrides that, so the device's setting decides.
+  It's **Always Allow Uploads** in StarPilot (Toggles → Device & Data → Data Uploads).
   It asks for both `rlog.bz2` and `rlog.zst` (the missing one comes back in `failed`).
 - athenad's queue: `listUploadQueue` lists every item, the uploading one included, whoever queued it (`path` ends in
   `<route>--<segment>/<file>`); a request whose URL minus the query is already queued is skipped. The queue survives a
@@ -187,8 +188,20 @@ Checked with a real Konik token in November 2026 (read-only calls: devices, `rou
 - Signed file URLs are on `api.konik.ai/connectdata/...?sig=` and work without the JWT, like comma's.
 - The site takes Konik routes as `konik:<dongle>|<route>` and `/devices/check` with `provider: konik`; its
   `konik_not_allowed` and `konik_api_not_allowed` are account-level (`pipeline.ACCOUNT`). It copies public routes
-  only from comma, so Konik forces `transfer = relay`. Switching service disables every device (verification is per
-  service) and is refused while a drive is still public.
+  only from comma, so the pipeline relays whenever `Cloud.public` is false, whatever `transfer` holds; the setting is
+  left alone so switching back keeps the user's choice.
+- Switching service disables every device (verification is per service) and is refused while a drive is still public.
+  `set_comma` lists the new service's devices first, then checks and saves under `public_lock`: checked before the
+  call, a route the worker made public meanwhile stayed public on comma, and Konik's 404 for it read as private.
+- Routes and devices record their service (`cloud`), and a comma and a Konik dongle ID can be equal. A route only moves
+  on with its own service's client (`end_foreign`, or `stop_orphaned_copy` for a copy, ends it once its device is
+  enabled on the other one), `make_private` refuses another service's route rather than take its "not found" as
+  private, and pages only show and change the current service's devices. A pass holds its client for hours and its
+  devices aren't re-read (`expire_on_commit=False`), so `make_public` re-reads the setting and the device's service under
+  the lock: a switch plus enabling the same dongle on Konik once let an old pass make a comma route public. Device
+  enables and refreshes check the service under `public_lock` too, since a switch saves under it. Read the token and the service together (`db.get_many`): a switch saves both at once.
+- athenad dedupes by URL, so `allow_cellular` reaches only files not already queued; a changed setting doesn't move
+  queued ones.
 - Not yet checked live: `upload_urls` and `uploadFilesToUrls` on Konik, and a full drive through the site.
 
 ## Not verified against reality

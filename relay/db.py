@@ -6,7 +6,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import JSON, Boolean, Float, Integer, String, Text, create_engine, event, inspect, text
+from sqlalchemy import JSON, Boolean, Float, Integer, String, Text, create_engine, event, inspect, select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.types import DateTime, TypeDecorator
 
@@ -50,6 +50,8 @@ class Device(Base):
   # It submitted through the site before, so a later "not verified" most likely means a revoke or a lapse.
   submitted_before: Mapped[bool] = mapped_column(Boolean, default=False)
   enabled_at: Mapped[datetime | None]
+  # The service (`comma.CLOUDS`) that last listed it: only the current service's devices are shown or watched.
+  cloud: Mapped[str] = mapped_column(String(16), default="comma")
 
 
 class Zone(Base):
@@ -77,6 +79,8 @@ class Route(Base):
   __tablename__ = "routes"
   fullname: Mapped[str] = mapped_column(String(64), primary_key=True)  # <dongle>|<name>
   dongle_id: Mapped[str] = mapped_column(String(16), index=True)
+  # The service it was found on: it only ever moves on with that service's client, never another's.
+  cloud: Mapped[str] = mapped_column(String(16), default="comma")
   state: Mapped[str] = mapped_column(String(24), index=True)
   start_time: Mapped[datetime | None]
   end_time: Mapped[datetime | None]
@@ -141,7 +145,10 @@ class Route(Base):
   error: Mapped[str] = mapped_column(Text, default="")
 
 
-ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = ()
+ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+  ("devices", "cloud", "VARCHAR(16) NOT NULL DEFAULT 'comma'"),
+  ("routes", "cloud", "VARCHAR(16) NOT NULL DEFAULT 'comma'"),
+)
 REMOVED_COLUMNS: tuple[tuple[str, str], ...] = (("devices", "is_owner"),)
 # Run once per database, by name. 0.1.0 to 0.1.2 sent files under names the site refuses and counted them as sent, so no
 # relayed file ever arrived: open drives send them again, and drives failed by that are started over (a failure deletes
@@ -213,6 +220,12 @@ def get(db: Session, key: str, default=None):
   if row is None:
     return DEFAULTS.get(key, default)
   return json.loads(row.value)
+
+
+def get_many(db: Session, *keys: str) -> tuple:
+  """Several settings from one SELECT, so a commit between two reads can't pair an old value with a new one."""
+  rows = dict(db.execute(select(Setting.key, Setting.value).where(Setting.key.in_(keys))).all())
+  return tuple(json.loads(rows[k]) if k in rows else DEFAULTS.get(k) for k in keys)
 
 
 def put(db: Session, key: str, value) -> None:

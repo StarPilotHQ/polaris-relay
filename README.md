@@ -48,8 +48,8 @@ docker compose up -d
 Open http://localhost:8080, sign in and follow Setup:
 
 1. Choose comma or Konik Stable and paste a token: for comma from [jwt.comma.ai](https://jwt.comma.ai), for Konik
-   the one the Konik sign-in saves on your computer (`~/.comma/auth.json` after `tools/lib/auth.py`). The page shows when it expires and warns you a week
-   before.
+   the one the Konik sign-in saves on your computer (`~/.comma/auth.json` after `tools/lib/auth.py`). The page shows
+   when it expires and warns you a week before.
 2. Paste your access token from the site.
 3. Enable your devices, and choose per device: submit automatically or only suggest, and whether to record drives.
    Devices shared with you aren't listed. Only drives that start after you enable a device are picked up. With
@@ -78,8 +78,10 @@ the drives. Konik drives always relay through this machine, since the site copie
 
 ### Uploads over cellular
 
-The device uploads the files a drive needs over Wi-Fi only, by default. To let it use cellular too (its data plan
-pays for it), tick **Let the device upload requested files over cellular too** under General settings.
+By default the device uploads the files a drive needs over Wi-Fi, unless StarPilot's **Always Allow Uploads** is on
+(Toggles → Device & Data → Data Uploads). To let it use cellular either way (its data plan pays for it), tick **Let the
+device upload requested files over cellular too** under **5. How files reach the site**. Files the device was already
+asked for keep the earlier choice.
 
 ### Before a drive is submitted
 

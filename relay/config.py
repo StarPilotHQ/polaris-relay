@@ -84,8 +84,8 @@ class Config:
     return c
 
   def endpoints(self, cloud: str) -> tuple[str, str]:
-    """(API, athena) for a cloud in `comma.CLOUDS`."""
-    return (self.konik_api, self.konik_athena) if cloud == "konik" else (self.comma_api, self.athena_api)
+    """(API, athena) for a cloud in `comma.CLOUDS`; an unknown name is a KeyError, never another service's hosts."""
+    return {"comma": (self.comma_api, self.athena_api), "konik": (self.konik_api, self.konik_athena)}[cloud]
 
   @property
   def secure_cookies(self) -> bool:

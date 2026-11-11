@@ -69,8 +69,8 @@ def web(tmp_path, comma, site, used):
   def comma_factory(t, cloud="comma"):
     used.append(cloud)
     return CommaClient(t, "https://comma.test", cloud=cloud, transport=httpx.MockTransport(comma.handler))
-  app = create_app(config, sm, comma_factory=comma_factory,
-                   site_factory=lambda t: SiteClient("https://site.test", t, transport=httpx.MockTransport(site.handler)))
+  app = create_app(config, sm, comma_factory=comma_factory, site_factory=lambda t: SiteClient(
+    "https://site.test", t, transport=httpx.MockTransport(site.handler)))
   return TestClient(app), sm
 
 
@@ -123,3 +123,200 @@ def test_cellular_uploads_follow_the_setting(allowed, log_schema, clock, make_wo
     s.commit()
   run_until_settled(w, clock)
   assert comma.cellular and set(comma.cellular) == {allowed}
+
+
+def test_switching_is_refused_while_a_drive_is_public(tmp_path, clock):
+  comma, site, used = FakeComma(clock, {0: b""}), FakeSite(), []
+  client, sm = web(tmp_path, comma, site, used)
+  token = csrf(client)
+  client.post("/setup/comma", data={"csrf": token, "cloud": "comma", "token": TOKEN}, headers=ORIGIN)
+  with sm() as s:
+    s.get(Device, DONGLE).enabled = True
+    s.add(Route(fullname=ROUTE, dongle_id=DONGLE, state=State.PUBLIC, public_since=clock()))
+    s.commit()
+  page = html.unescape(client.post("/setup/comma", data={"csrf": token, "cloud": "konik", "token": TOKEN},
+                                   headers=ORIGIN).text)
+  assert "still public on comma connect" in page
+  with sm() as s:
+    assert db.get(s, "cloud") == "comma" and s.get(Device, DONGLE).enabled
+
+
+def test_a_route_made_public_while_devices_are_listed_stops_the_switch(tmp_path, clock):
+  """The worker can make a route public while the switch waits on the service: the check comes after that call."""
+  comma, site, used = FakeComma(clock, {0: b""}), FakeSite(), []
+  client, sm = web(tmp_path, comma, site, used)
+  token = csrf(client)
+  client.post("/setup/comma", data={"csrf": token, "cloud": "comma", "token": TOKEN}, headers=ORIGIN)
+  real = comma.handler
+
+  def handler(request):
+    if request.url.path == "/v1/me/devices/":
+      with sm() as s:
+        s.add(Route(fullname=ROUTE, dongle_id=DONGLE, state=State.SUBMITTING, public_since=clock()))
+        s.commit()
+    return real(request)
+  comma.handler = handler
+  page = html.unescape(client.post("/setup/comma", data={"csrf": token, "cloud": "konik", "token": TOKEN},
+                                   headers=ORIGIN).text)
+  assert "still public" in page
+  with sm() as s:
+    assert db.get(s, "cloud") == "comma"
+
+
+def test_unknown_service_is_refused(tmp_path, clock):
+  comma, site, used = FakeComma(clock, {0: b""}), FakeSite(), []
+  client, sm = web(tmp_path, comma, site, used)
+  token = csrf(client)
+  client.post("/setup/comma", data={"csrf": token, "cloud": "other", "token": TOKEN}, headers=ORIGIN)
+  assert not used
+  with sm() as s:
+    assert db.get(s, "comma_token") is None
+
+
+def test_only_the_current_services_devices_are_shown_or_changed(tmp_path, clock):
+  comma, site, used = FakeComma(clock, {0: b""}), FakeSite(konik=True), []
+  client, sm = web(tmp_path, comma, site, used)
+  token = csrf(client)
+  client.post("/setup/comma", data={"csrf": token, "cloud": "comma", "token": TOKEN}, headers=ORIGIN)
+  comma.devices_payload = [{"dongle_id": "c" * 16, "alias": "Konik car", "is_owner": True}]
+  client.post("/setup/comma", data={"csrf": token, "cloud": "konik", "token": TOKEN}, headers=ORIGIN)
+  page = client.get("/setup").text
+  assert "Konik car" in page and "Test car" not in page
+  for action in ("enable", "disable", "options"):
+    assert client.post(f"/devices/{DONGLE}/{action}", data={"csrf": token}, headers=ORIGIN).status_code == 404
+  with sm() as s:
+    assert s.get(Device, DONGLE).cloud == "comma" and s.get(Device, "c" * 16).cloud == "konik"
+
+
+def test_a_device_listed_by_both_services_moves_and_is_disabled(tmp_path, clock):
+  comma, site, used = FakeComma(clock, {0: b""}), FakeSite(), []
+  client, sm = web(tmp_path, comma, site, used)
+  token = csrf(client)
+  client.post("/setup/comma", data={"csrf": token, "cloud": "comma", "token": TOKEN}, headers=ORIGIN)
+  with sm() as s:
+    s.get(Device, DONGLE).enabled = True
+    s.commit()
+  client.post("/setup/comma", data={"csrf": token, "cloud": "konik", "token": TOKEN}, headers=ORIGIN)
+  with sm() as s:
+    d = s.get(Device, DONGLE)
+    assert d.cloud == "konik" and not d.enabled
+
+
+def foreign_route(clock, state=State.TRANSFERRING, **kw) -> Route:
+  return Route(fullname=f"{DONGLE}|0000002a--0000000001", dongle_id=DONGLE, cloud="comma", state=state,
+               start_time=clock(), **kw)
+
+
+def test_a_route_from_the_old_service_is_ended_not_moved_on(log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, plain_drive(log_schema), procqlog=False), FakeSite(konik=True)
+  w = make_worker(comma, site)
+  onboard(w, cloud="konik")
+  with w.sessionmaker() as s:
+    s.add(foreign_route(clock))
+    s.commit()
+  w.tick()
+  with w.sessionmaker() as s:
+    r = s.get(Route, f"{DONGLE}|0000002a--0000000001")
+    assert r.state == State.SKIPPED and "switched services" in r.note
+  assert not [q for q in comma.requests if "0000002a" in str(q.url)]
+
+
+def test_a_route_from_the_old_service_waits_while_its_device_is_off(log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, plain_drive(log_schema), procqlog=False), FakeSite(konik=True)
+  w = make_worker(comma, site)
+  onboard(w, cloud="konik")
+  with w.sessionmaker() as s:
+    s.get(Device, DONGLE).cloud = "comma"  # only comma lists it: switching back finds the drive where it was
+    s.add(foreign_route(clock))
+    s.commit()
+  w.tick()
+  with w.sessionmaker() as s:
+    assert s.get(Route, f"{DONGLE}|0000002a--0000000001").state == State.TRANSFERRING
+
+
+def test_the_safety_net_never_takes_another_services_not_found_as_private(log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, plain_drive(log_schema), procqlog=False), FakeSite(konik=True)
+  w = make_worker(comma, site)
+  onboard(w, cloud="konik")
+  with w.sessionmaker() as s:
+    s.add(foreign_route(clock, State.PUBLIC, public_since=clock()))
+    s.commit()
+  w.run_safety_net()
+  with w.sessionmaker() as s:
+    assert s.get(Route, f"{DONGLE}|0000002a--0000000001").public_since is not None
+  assert not comma.public_changes
+
+
+def test_an_existing_database_gets_the_service_columns(tmp_path):
+  import sqlite3
+  make_sessionmaker(tmp_path)
+  conn = sqlite3.connect(tmp_path / "relay.db")
+  for table in ("devices", "routes"):
+    conn.execute(f"ALTER TABLE {table} DROP COLUMN cloud")
+  conn.execute("INSERT INTO devices (dongle_id, alias, enabled, mode, record_drives, last_athena_ping, "
+               "submitted_before) VALUES ('d', '', 0, 'auto', 1, 0, 0)")
+  conn.commit()
+  conn.close()
+  with make_sessionmaker(tmp_path)() as s:
+    assert s.get(Device, "d").cloud == "comma"
+
+
+def test_a_refusal_of_the_token_replaced_meanwhile_pauses_nothing(log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, plain_drive(log_schema), procqlog=False), FakeSite(konik=True)
+  w = make_worker(comma, site)
+  onboard(w)
+  with w.sessionmaker() as s:
+    db.put(s, "comma_token", "header.eyJleHAiOiA5OTk5OTk5OTk4fQ.new")
+    db.put(s, "cloud", "konik")
+    s.commit()
+    w.comma_refused(s, TOKEN)
+    assert db.get(s, "pause:comma") is None
+    w.comma_refused(s, "header.eyJleHAiOiA5OTk5OTk5OTk4fQ.new")
+    assert db.get(s, "pause:comma").startswith("Konik refused")
+
+
+def test_a_pass_still_on_the_old_service_never_makes_a_route_public(log_schema, clock, make_worker):
+  """A switch commits while a long pass, holding the old client, reaches the make-public step."""
+  comma, site = FakeComma(clock, plain_drive(log_schema)), FakeSite()
+  w = make_worker(comma, site)
+  onboard(w, transfer="public")
+  with w.sessionmaker() as s:
+    r = foreign_route(clock, State.SUBMITTING, transfer="public")
+    s.add(r)
+    s.commit()
+    db.put(s, "cloud", "konik")
+    s.get(Device, DONGLE).cloud = "konik"  # Konik lists the same dongle and the user enabled it there
+    s.commit()
+    client = w.comma_factory(TOKEN, "comma")
+    with pytest.raises(Exception, match="switched services"):
+      w.make_public(s, client, r)
+    client.close()
+    assert s.get(Route, r.fullname).public_since is None
+  assert not comma.public_changes
+
+
+def test_switching_to_a_public_routes_service_is_allowed(tmp_path, clock):
+  comma, site, used = FakeComma(clock, {0: b""}), FakeSite(), []
+  client, sm = web(tmp_path, comma, site, used)
+  token = csrf(client)
+  client.post("/setup/comma", data={"csrf": token, "cloud": "konik", "token": TOKEN}, headers=ORIGIN)
+  with sm() as s:
+    s.add(foreign_route(clock, State.FAILED, public_since=clock()))
+    s.commit()
+  client.post("/setup/comma", data={"csrf": token, "cloud": "comma", "token": TOKEN}, headers=ORIGIN)
+  with sm() as s:
+    assert db.get(s, "cloud") == "comma"
+
+
+def test_a_copy_on_the_old_service_is_ended_and_withdrawn(log_schema, clock, make_worker):
+  comma, site = FakeComma(clock, plain_drive(log_schema), procqlog=False), FakeSite(konik=True)
+  w = make_worker(comma, site)
+  onboard(w, cloud="konik")
+  with w.sessionmaker() as s:
+    s.add(foreign_route(clock, State.PUBLIC, submission_id="sub1"))
+    s.commit()
+  w.tick()
+  with w.sessionmaker() as s:
+    r = s.get(Route, f"{DONGLE}|0000002a--0000000001")
+    assert r.state == State.FAILED and "switched services" in r.note and "withdrawn" in r.note
+  assert site.withdrawn == ["sub1"] and not comma.public_changes

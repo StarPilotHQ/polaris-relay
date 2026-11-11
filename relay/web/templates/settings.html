@@ -90,26 +90,27 @@
 <section class="gx-card">
   {{ header("cloud-arrow-up", "5. How files reach the site") }}
   <form method="post" action="/settings/general" class="gx-panel rl-form">{{ field() }}
-    <div class="rl-choices">
+    {% if cloud.public %}<div class="rl-choices">
       <label class="rl-choice"><input type="radio" name="transfer" value="relay" {{ "checked" if transfer == "relay" }}>
         <span><strong>Relay through this machine</strong> (recommended). This machine downloads the needed segments from
         comma and uploads them to the site. Your route is never made public. Costs your bandwidth: roughly 75 to 115 MB
         per segment, down and up again.</span></label>
-      {% if cloud.public %}<label class="rl-choice"><input type="radio" name="transfer" value="public" {{ "checked" if transfer == "public" }}>
+      <label class="rl-choice"><input type="radio" name="transfer" value="public" {{ "checked" if transfer == "public" }}>
         <span><strong>Make the route public briefly</strong>. The route is made public, the site copies the segments
         from comma, and the route is made private again. Uses almost no bandwidth here, but while it's public
         <strong>anyone with the route's name can read the whole route, privacy-zone segments included</strong>, for up
         to {{ public_cap_h|round(1) }} hours, and longer if this machine stops mid-step.</span></label>
-      {% else %}<p class="gx-note">The site copies public routes only from comma, so {{ cloud.label }} drives always go
-        through this machine.</p>{% endif %}
     </div>
+    {% else %}<p>This machine downloads the needed segments from {{ cloud.label }} and uploads them to the site. Your
+    route is never made public. Costs your bandwidth: roughly 75 to 115 MB per segment, down and up again.</p>{% endif %}
     <div>
       <label class="rl-inline-field">Also keep private this many segments on each side of a zone segment
         <input class="gx-field rl-num" name="surround" type="number" min="0" max="5" value="{{ surround }}"></label>
       <p class="gx-note">0 keeps only the segments that touch a zone. 1 also covers the approach and the departure.</p>
     </div>
     <label class="rl-check"><input type="checkbox" name="upload_cellular" value="1" {{ "checked" if upload_cellular }}> Let
-      the device upload requested files over cellular too (uses its data plan; otherwise it waits for Wi-Fi)</label>
+      the device upload requested files over cellular too (uses its data plan; otherwise the device's own setting decides).
+      Files it was already asked for keep the earlier choice.</label>
     <label class="rl-check"><input type="checkbox" name="update_check" value="1" {{ "checked" if update_check }}> Check for new versions
       once a day (asks GitHub's container registry for the latest version number)</label>
     <div><button class="gx-btn gx-btn--small">Save</button></div>
@@ -142,7 +143,7 @@
 <section class="gx-card">
   {{ header("flag", "6. Finish") }}
   <div class="gx-panel rl-form">
-    <p>Drives that start after you finish are picked up. Earlier drives aren't: comma may already have deleted their
+    <p>Drives that start after you finish are picked up. Earlier drives aren't: {{ cloud.label }} may already have deleted their
     files.</p>
     {% if not zone_count %}<p class="rl-warn"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i>You have no privacy zones. Everything outside them can be sent, so
     draw at least your home before finishing.</p>{% endif %}
